@@ -1,0 +1,105 @@
+.app { width: 100%; overflow-x: hidden; }
+
+/* ---- Section utilities ---- */
+.section { padding: 80px 0; position: relative; }
+.section-white { background: var(--bg); }
+.section-alt { background: var(--bg-alt); }
+.section-purple { background: var(--bg-purple-soft); }
+.section-blue { background: var(--bg-blue-soft); }
+
+.container { max-width: 1140px; margin: 0 auto; padding: 0 20px; }
+
+/* ---- Section headers ---- */
+.section-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: var(--r-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+.tag-purple { background: var(--purple-light); color: var(--purple-dark); }
+.tag-blue   { background: var(--blue-light);   color: var(--blue-deeper); }
+.tag-yellow { background: var(--yellow-light);  color: var(--yellow-dark); }
+.tag-green  { background: var(--green-light);   color: #065f46; }
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.75rem, 4vw, 2.75rem);
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+  margin-bottom: 14px;
+}
+.section-sub {
+  font-size: 1.05rem;
+  color: var(--text-secondary);
+  max-width: 560px;
+  line-height: 1.7;
+}
+
+/* ---- Shared button styles ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-weight: 600;
+  border-radius: var(--r-full);
+  transition: all 0.25s ease;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  border: none;
+  text-decoration: none;
+}
+.btn-lg  { padding: 15px 36px; font-size: 1rem; }
+.btn-md  { padding: 12px 28px; font-size: 0.9rem; }
+.btn-sm  { padding: 9px 20px;  font-size: 0.82rem; }
+
+.btn-purple {
+  background: var(--grad-purple);
+  color: #fff;
+  box-shadow: var(--shadow-purple);
+}
+.btn-purple:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(139,92,246,0.4);
+}
+.btn-blue {
+  background: var(--grad-blue);
+  color: #fff;
+  box-shadow: var(--shadow-blue);
+}
+.btn-blue:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgba(33,150,243,0.4);
+}
+.btn-outline-purple {
+  background: transparent;
+  color: var(--purple);
+  border: 2px solid var(--purple);
+}
+.btn-outline-purple:hover {
+  background: var(--purple-light);
+}
+.btn-white {
+  background: #fff;
+  color: var(--purple-dark);
+  box-shadow: var(--shadow-md);
+}
+.btn-white:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (max-width: 768px) {
+  .section { padding: 60px 0; }
+}
+@media (max-width: 480px) {
+  .section { padding: 48px 0; }
+  .container { padding: 0 16px; }
+}

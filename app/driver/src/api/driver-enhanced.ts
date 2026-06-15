@@ -1,0 +1,70 @@
+import apiClient from './client';
+import { EnhancedRide, VerifyOTPRequest } from '../types/enhanced';
+
+export const driverEnhancedApi = {
+  // Get available rides
+  getAvailableRides: async (): Promise<EnhancedRide[]> => {
+    const response = await apiClient.get<EnhancedRide[]>('/api/v2/driver/rides/available');
+    return response.data;
+  },
+
+  // Accept ride
+  acceptRide: async (rideId: string): Promise<EnhancedRide> => {
+    const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/accept`);
+    return response.data;
+  },
+
+  // Verify OTP
+  verifyOTP: async (rideId: string, otp: string): Promise<EnhancedRide> => {
+    const response = await apiClient.post<EnhancedRide>(
+      `/api/v2/driver/rides/${rideId}/verify-otp`,
+      {
+        ride_id: rideId,
+        otp: otp,
+      }
+    );
+    return response.data;
+  },
+
+  // Start ride (requires OTP verification)
+  startRide: async (rideId: string): Promise<EnhancedRide> => {
+    const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/start`);
+    return response.data;
+  },
+
+  // Complete ride
+  completeRide: async (rideId: string): Promise<EnhancedRide> => {
+    const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/complete`);
+    return response.data;
+  },
+
+  // Reject ride
+  rejectRide: async (rideId: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>(
+      `/api/v2/driver/rides/${rideId}/reject`
+    );
+    return response.data;
+  },
+
+  // Get active ride
+  getActiveRide: async (): Promise<EnhancedRide> => {
+    const response = await apiClient.get<EnhancedRide>('/api/v2/driver/rides/active');
+    return response.data;
+  },
+
+  // Get ride history
+  getRideHistory: async (): Promise<EnhancedRide[]> => {
+    const response = await apiClient.get<EnhancedRide[]>('/api/v2/driver/rides/history');
+    return response.data;
+  },
+
+  // Get earnings
+  getEarnings: async (): Promise<{
+    total_earnings: number;
+    total_rides: number;
+    average_fare: number;
+  }> => {
+    const response = await apiClient.get('/api/v2/driver/earnings');
+    return response.data;
+  },
+};

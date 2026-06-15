@@ -1,0 +1,122 @@
+.nb {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 900;
+  background: #fff;
+  border-bottom: 1px solid #E2E8F0;
+  box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+  padding: 0 24px;
+}
+.nb-inner {
+  max-width: 1160px; margin: 0 auto;
+  height: 64px;
+  display: flex; align-items: center; gap: 16px;
+}
+
+/* Logo */
+.nb-logo { display:flex; align-items:center; gap:8px; text-decoration:none; flex-shrink:0; }
+.nb-logo-sq {
+  width:36px; height:36px; border-radius:8px;
+  background:#7C3AED;
+  display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-display); font-weight:800; font-size:0.88rem; color:#fff;
+}
+.nb-logo-txt {
+  font-family: 'Pacifico', cursive;
+  font-weight: 400;
+  font-size: 1.22rem;
+  color: #0F172A;
+  letter-spacing: 0.3px;
+}
+
+/* Links */
+.nb-links { flex:1; display:flex; justify-content:center; gap:2px; }
+.nb-lnk {
+  padding:8px 13px; border-radius:8px;
+  font-size:0.875rem; font-weight:500; color:#475569;
+  text-decoration:none; transition:color .15s,background .15s;
+}
+.nb-lnk:hover { color:#7C3AED; background:#F5F3FF; }
+
+/* Right */
+.nb-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+.nb-tel {
+  display:flex; align-items:center; gap:6px;
+  padding:8px 14px; border-radius:8px;
+  font-size:0.82rem; font-weight:600; color:#475569;
+  text-decoration:none; transition:color .15s,background .15s;
+}
+.nb-tel:hover { color:#7C3AED; background:#F5F3FF; }
+.nb-book {
+  padding:9px 22px; border-radius:8px;
+  background:#7C3AED; color:#fff;
+  font-size:0.875rem; font-weight:600;
+  text-decoration:none; white-space:nowrap;
+  transition:background .18s,transform .18s,box-shadow .18s;
+}
+.nb-book:hover { background:#6D28D9; transform:translateY(-1px); box-shadow:0 4px 14px rgba(124,58,237,.35); }
+
+/* Hamburger */
+.nb-ham {
+  display:none; flex-direction:column; justify-content:center; align-items:center; gap:5px;
+  width:42px; height:42px; border-radius:9px;
+  border:1.5px solid #E2E8F0; background:#F8FAFC;
+  cursor:pointer; flex-shrink:0; transition:background .15s;
+}
+.nb-ham:hover { background:#F5F3FF; border-color:#DDD6FE; }
+.nb-ham span { display:block; width:18px; height:2px; border-radius:2px; background:#334155; }
+
+/* Mask */
+.nb-mask { position:fixed; inset:0; background:rgba(0,0,0,.5); backdrop-filter:blur(3px); z-index:940; }
+
+/* Drawer */
+.nb-drawer {
+  position:fixed; top:0; right:0; bottom:0; width:min(320px,85vw);
+  background:#fff; z-index:950; display:flex; flex-direction:column;
+  box-shadow:-12px 0 50px rgba(0,0,0,.15);
+}
+.nb-drawer-hd {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:16px 18px; border-bottom:1px solid #F1F5F9; flex-shrink:0;
+}
+.nb-drawer-close {
+  width:36px; height:36px; border-radius:8px;
+  background:#F8FAFC; border:1px solid #E2E8F0; color:#64748B;
+  display:flex; align-items:center; justify-content:center; cursor:pointer; transition:all .15s;
+}
+.nb-drawer-close:hover { background:#F5F3FF; color:#7C3AED; border-color:#DDD6FE; }
+.nb-drawer-nav { flex:1; overflow-y:auto; padding:8px 10px; }
+.nb-drawer-lnk {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:13px 14px; border-radius:9px;
+  font-size:.95rem; font-weight:500; color:#334155;
+  text-decoration:none; transition:all .15s;
+}
+.nb-drawer-lnk:hover { background:#F5F3FF; color:#7C3AED; }
+.nb-arr { color:#CBD5E1; transition:color .15s; }
+.nb-drawer-lnk:hover .nb-arr { color:#7C3AED; }
+.nb-drawer-ft {
+  padding:16px 18px 24px; border-top:1px solid #F1F5F9;
+  display:flex; flex-direction:column; gap:10px;
+}
+.nb-drawer-call {
+  display:flex; align-items:center; justify-content:center; gap:8px;
+  padding:13px; border-radius:9px;
+  border:1.5px solid #EDE9FE; background:#FAFAFE;
+  color:#7C3AED; font-weight:600; font-size:.9rem;
+  text-decoration:none; transition:background .15s;
+}
+.nb-drawer-call:hover { background:#EDE9FE; }
+.nb-drawer-book {
+  display:flex; align-items:center; justify-content:center;
+  padding:14px; border-radius:9px;
+  background:#7C3AED; color:#fff; font-weight:700; font-size:.95rem;
+  text-decoration:none; transition:background .15s;
+}
+.nb-drawer-book:hover { background:#6D28D9; }
+.nb-drawer-note { text-align:center; font-size:.72rem; color:#94A3B8; }
+
+@media (max-width:900px) {
+  .nb-links,.nb-right { display:none; }
+  .nb-ham { display:flex; }
+}
