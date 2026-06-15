@@ -26,9 +26,22 @@ This directory contains structured documentation for AI assistants (like Claude 
 
 ---
 
+### 🚀 Deployment
+
+3. **`DEPLOYMENT.md`** - Production deployment guide **NEW**
+   - EC2 server details (IP, access)
+   - Service management (start/stop/restart/logs)
+   - Nginx + Uvicorn setup
+   - How to update (git pull → restart)
+   - Troubleshooting
+   - Security group rules
+   - Python 3.14 compatibility notes
+
+---
+
 ### 🏗️ Architecture & Technical
 
-3. **`ARCHITECTURE.md`** - Technical architecture details
+4. **`ARCHITECTURE.md`** - Technical architecture details
    - Backend layer structure
    - Database schema
    - API flow patterns
@@ -123,7 +136,9 @@ This directory contains structured documentation for AI assistants (like Claude 
 - **Safety Features:** ✅ Implemented
 - **Enhanced Features V2:** ✅ 14/14 Complete
 - **Admin Analytics:** ✅ Implemented
-- **Status:** 🚀 100% Production Ready
+- **Deployment:** ✅ Live at http://3.7.46.116/
+- **GitHub:** ✅ https://github.com/SSAKTHITSELVAN/jk_taxi
+- **Status:** 🚀 DEPLOYED & LIVE
 
 ### Key Features (Latest)
 - ✅ 6 trip types (One Way, Round Trip, Rental, etc.)
