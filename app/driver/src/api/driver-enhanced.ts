@@ -58,6 +58,12 @@ export const driverEnhancedApi = {
     return response.data;
   },
 
+  // Get ride details
+  getRideDetails: async (rideId: string): Promise<EnhancedRide> => {
+    const response = await apiClient.get<EnhancedRide>(`/api/v2/driver/rides/${rideId}`);
+    return response.data;
+  },
+
   // Get earnings
   getEarnings: async (): Promise<{
     total_earnings: number;

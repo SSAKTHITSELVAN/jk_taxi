@@ -104,7 +104,7 @@ export default function BookRideMapScreen() {
         [
           {
             text: 'View Ride',
-            onPress: () => router.replace('/(tabs)/rides'),
+            onPress: () => router.replace('/rides'),
           },
         ]
       );

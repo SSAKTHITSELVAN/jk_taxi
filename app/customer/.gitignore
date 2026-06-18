@@ -32,6 +32,7 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env.production
 
 # typescript
 *.tsbuildinfo
@@ -41,3 +42,19 @@ app-example
 # generated native folders
 /ios
 /android
+
+# EAS Build
+android-service-account.json
+*.aab
+*.apk
+
+# Play Store assets (large files)
+playstore-assets/
+
+# Sensitive files
+credentials.json
+google-services.json
+
+# Build artifacts
+build/
+.expo-shared/

@@ -4,7 +4,7 @@ import './Services.css'
 
 const services = [
   {
-    img: 'https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     tag: 'Most Popular',
     tagClass: 'tag-purple',
     title: 'Car Rides',
@@ -14,7 +14,7 @@ const services = [
     startFrom: '₹80',
   },
   {
-    img: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/13082172/pexels-photo-13082172.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     tag: 'Best Value',
     tagClass: 'tag-yellow',
     title: 'Auto Rickshaw',
@@ -24,7 +24,7 @@ const services = [
     startFrom: '₹30',
   },
   {
-    img: 'https://images.unsplash.com/photo-1609609806578-b96e96e86ac5?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/36875809/pexels-photo-36875809.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     tag: 'Fastest',
     tagClass: 'tag-blue',
     title: 'Bike Taxi',
@@ -34,7 +34,7 @@ const services = [
     startFrom: '₹20',
   },
   {
-    img: 'https://images.unsplash.com/photo-1512719994953-eabf50895df7?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/5794231/pexels-photo-5794231.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     tag: 'Instant',
     tagClass: 'tag-green',
     title: 'Ping — Instant Ride',

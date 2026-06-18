@@ -36,7 +36,7 @@ export default function VerifyOTPScreen() {
       Alert.alert('Success', 'Phone number verified successfully!', [
         {
           text: 'OK',
-          onPress: () => router.replace('/(tabs)'),
+          onPress: () => router.replace('/'),
         },
       ]);
     } catch (err: any) {
@@ -101,7 +101,7 @@ export default function VerifyOTPScreen() {
           <Button
             title="Skip for Now"
             variant="outline"
-            onPress={() => router.replace('/(tabs)')}
+            onPress={() => router.replace('/')}
             style={styles.skipButton}
           />
         </View>

@@ -14,19 +14,24 @@
 }
 
 /* Logo */
-.nb-logo { display:flex; align-items:center; gap:8px; text-decoration:none; flex-shrink:0; }
-.nb-logo-sq {
-  width:36px; height:36px; border-radius:8px;
-  background:#7C3AED;
-  display:flex; align-items:center; justify-content:center;
-  font-family:var(--font-display); font-weight:800; font-size:0.88rem; color:#fff;
+.nb-logo {
+  display:flex; align-items:center;
+  text-decoration:none; flex-shrink:0;
+  transition: transform 0.3s ease;
+  height: 48px;
 }
-.nb-logo-txt {
-  font-family: 'Pacifico', cursive;
-  font-weight: 400;
-  font-size: 1.22rem;
-  color: #0F172A;
-  letter-spacing: 0.3px;
+.nb-logo:hover {
+  transform: scale(1.05);
+}
+.nb-logo-img {
+  height: 48px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 8px rgba(124,58,237,0.2));
+  transition: filter 0.3s ease;
+}
+.nb-logo:hover .nb-logo-img {
+  filter: drop-shadow(0 4px 12px rgba(124,58,237,0.35));
 }
 
 /* Links */

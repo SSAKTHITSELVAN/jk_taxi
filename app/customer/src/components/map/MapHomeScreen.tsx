@@ -9,15 +9,16 @@ import {
   Dimensions,
   Platform,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { SimpleMap } from './SimpleMap';
+import * as Location from 'expo-location';
+import { MapboxMap } from './MapboxMap';
 import { RideBottomSheet } from '../ride/RideBottomSheet';
 import { useAuthStore } from '../../store/authStore';
 import { useRideStore } from '../../store/rideStore';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
-import { router as expoRouter } from 'expo-router';
 
 const { width, height } = Dimensions.get('window');
 
@@ -35,16 +36,68 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
     longitude: 77.5946,
   });
   const [locationPermission, setLocationPermission] = useState<boolean | null>(null);
-  const [locationName, setLocationName] = useState('Bangalore');
+  const [locationName, setLocationName] = useState('Fetching location...');
+  const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
   const [menuOpen, setMenuOpen] = useState(false);
 
   const menuSlideAnim = useRef(new Animated.Value(-320)).current;
 
   useEffect(() => {
-    // Location is optional - app works without it
-    setLocationPermission(true);
+    getUserLocation();
   }, []);
+
+  const getUserLocation = async () => {
+    try {
+      // Check permission
+      const { status } = await Location.getForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        console.log('Location permission not granted');
+        setLocationPermission(false);
+        setLocationName('Bangalore (Enable GPS)');
+        setIsLoadingLocation(false);
+        return;
+      }
+
+      setLocationPermission(true);
+
+      // Get current location
+      const currentLocation = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      const { latitude, longitude } = currentLocation.coords;
+      setLocation({ latitude, longitude });
+
+      // Reverse geocode to get location name
+      try {
+        const address = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (address[0]) {
+          const locationStr = [
+            address[0].street || address[0].name,
+            address[0].city,
+          ]
+            .filter(Boolean)
+            .join(', ');
+          setLocationName(locationStr || 'Current Location');
+        }
+      } catch (geocodeError) {
+        console.log('Geocoding failed:', geocodeError);
+        setLocationName('Current Location');
+      }
+
+      // Update map location
+      console.log('📍 Location updated:', { latitude, longitude });
+
+      setIsLoadingLocation(false);
+    } catch (error) {
+      console.error('Error getting location:', error);
+      setLocationPermission(false);
+      setLocationName('Bangalore (GPS Error)');
+      setIsLoadingLocation(false);
+    }
+  };
 
   const toggleMenu = () => {
     const toValue = menuOpen ? -320 : 0; // Fully hide at -320
@@ -63,19 +116,17 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   };
 
   // Check if we should show active ride in bottom sheet
-  const showActiveRideSheet =
-    activeRide &&
-    activeRide.booking_for_self &&
-    (!activeRide.is_scheduled || activeRide.status !== 'pending');
+  const showActiveRideSheet = activeRide && activeRide.status !== 'pending';
 
   return (
     <View style={styles.container}>
-      {/* Simple Map Preview */}
-      <SimpleMap
+      {/* Mapbox Map with GPS Location */}
+      <MapboxMap
         latitude={location.latitude}
         longitude={location.longitude}
         showMarker={true}
         markerTitle={locationName}
+        zoom={14}
       />
 
       {/* Floating Location Card */}
@@ -85,14 +136,26 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
         </TouchableOpacity>
 
         <View style={styles.locationInfo}>
-          <Ionicons name="location" size={16} color={Colors.primary} />
+          {isLoadingLocation ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Ionicons name="location" size={16} color={Colors.primary} />
+          )}
           <Text style={styles.locationText} numberOfLines={1}>
             {locationName}
           </Text>
         </View>
 
-        <TouchableOpacity style={styles.notificationButton}>
-          <Ionicons name="notifications-outline" size={22} color="#000000" />
+        <TouchableOpacity
+          style={styles.notificationButton}
+          onPress={getUserLocation}
+          disabled={isLoadingLocation}
+        >
+          <Ionicons
+            name={isLoadingLocation ? "refresh" : "navigate-circle-outline"}
+            size={22}
+            color={Colors.primary}
+          />
         </TouchableOpacity>
       </View>
 
@@ -195,7 +258,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
                     onPress: async () => {
                       toggleMenu();
                       await logout();
-                      expoRouter.replace('/login');
+                      router.replace('/login');
                     },
                   },
                 ]
@@ -244,15 +307,13 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
             >
               <View style={styles.activeRideLeft}>
                 <Ionicons
-                  name={activeRide.is_scheduled ? 'calendar' : 'people'}
+                  name="car"
                   size={28}
                   color={Colors.primary}
                 />
                 <View style={styles.activeRideInfo}>
                   <Text style={styles.activeRideTitle}>
-                    {activeRide.is_scheduled
-                      ? 'Scheduled Ride'
-                      : `Ride for ${activeRide.passenger_name}`}
+                    Active Ride
                   </Text>
                   <Text style={styles.activeRideStatus}>
                     {activeRide.status.toUpperCase()}
@@ -648,5 +709,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.primary,
     borderWidth: 3,
     borderColor: Colors.white,
+  },
+  customMarker: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

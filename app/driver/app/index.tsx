@@ -326,7 +326,7 @@ export default function HomeScreen() {
 
             {/* OTP Status Card */}
             {activeRide.status === 'accepted' && (
-              <Card style={[styles.otpCard, !activeRide.otp_verified && styles.otpCardPending]}>
+              <Card style={[styles.otpCard, !activeRide.otp_verified ? styles.otpCardPending : undefined]}>
                 <View style={styles.otpHeader}>
                   <View style={styles.otpIconContainer}>
                     <Ionicons

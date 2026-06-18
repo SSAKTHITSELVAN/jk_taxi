@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Car, Bus, Bike, Zap, MapPin, ArrowRight, Phone, ChevronDown } from 'lucide-react'
 import './Hero.css'
+import heroVideo from '../assets/hero_section_background.mp4'
 
 const VEHS = [
   { id:'car',  Icon:Car,  label:'Car',   sub:'Mini · Sedan · SUV',  price:'From ₹80'  },
@@ -23,16 +24,26 @@ export default function Hero() {
   return (
     <section className="hr">
 
-      {/* ─── Full-screen background photo ─── */}
+      {/* ─── Full-screen background video ─── */}
       <div className="hr-bg" aria-hidden="true">
-        <img
-          src="https://images.pexels.com/photos/1179579/pexels-photo-1179579.jpeg?auto=compress&cs=tinysrgb&w=1800&h=1000&fit=crop"
-          alt=""
-          className="hr-bg-photo"
-          fetchpriority="high"
-        />
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="hr-bg-video"
+        >
+          <source src={heroVideo} type="video/mp4" />
+        </video>
         {/* Purple gradient overlay — the key visual */}
-        <div className="hr-bg-overlay" />
+        <div className="hr-bg-overlay">
+          {/* Animated floating shapes */}
+          <div className="hr-shape hr-shape-1" />
+          <div className="hr-shape hr-shape-2" />
+          <div className="hr-shape hr-shape-3" />
+          <div className="hr-shape hr-shape-4" />
+          <div className="hr-shape hr-shape-5" />
+        </div>
       </div>
 
       {/* ─── Content wrapper (centres everything) ─── */}

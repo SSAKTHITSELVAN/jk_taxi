@@ -21,23 +21,129 @@
   inset: 0;
   z-index: 0;
 }
-.hr-bg-photo {
+.hr-bg-video {
   width: 100%; height: 100%;
   object-fit: cover;
-  object-position: center 55%;
+  object-position: center;
   display: block;
 }
-/* Rich purple-to-dark gradient — the entire visual identity */
+/* Very light purple gradient overlay - video clearly visible */
 .hr-bg-overlay {
   position: absolute;
   inset: 0;
   background: linear-gradient(
     160deg,
-    rgba(76,29,149,0.93) 0%,
-    rgba(109,40,217,0.88) 35%,
-    rgba(124,58,237,0.80) 60%,
-    rgba(30,27,75,0.90)  100%
+    rgba(76,29,149,0.35) 0%,
+    rgba(109,40,217,0.30) 35%,
+    rgba(124,58,237,0.28) 60%,
+    rgba(30,27,75,0.40)  100%
   );
+  animation: gradient-shift 15s ease-in-out infinite;
+}
+
+@keyframes gradient-shift {
+  0%, 100% {
+    background: linear-gradient(
+      160deg,
+      rgba(76,29,149,0.35) 0%,
+      rgba(109,40,217,0.30) 35%,
+      rgba(124,58,237,0.28) 60%,
+      rgba(30,27,75,0.40)  100%
+    );
+  }
+  50% {
+    background: linear-gradient(
+      160deg,
+      rgba(109,40,217,0.38) 0%,
+      rgba(124,58,237,0.33) 35%,
+      rgba(33,150,243,0.30) 60%,
+      rgba(30,27,75,0.42)  100%
+    );
+  }
+}
+
+/* Floating animated shapes - lighter to let video show */
+.hr-shape {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+  pointer-events: none;
+  animation: float-shape 20s ease-in-out infinite;
+}
+
+.hr-shape-1 {
+  width: 400px;
+  height: 400px;
+  top: -10%;
+  left: -5%;
+  animation: float-shape 25s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(252,211,77,0.08) 0%, transparent 70%);
+}
+
+.hr-shape-2 {
+  width: 300px;
+  height: 300px;
+  top: 20%;
+  right: -8%;
+  animation: float-shape 30s ease-in-out infinite reverse;
+  animation-delay: -5s;
+  background: radial-gradient(circle, rgba(139,92,246,0.07) 0%, transparent 70%);
+}
+
+.hr-shape-3 {
+  width: 250px;
+  height: 250px;
+  bottom: 10%;
+  left: 15%;
+  animation: float-shape 22s ease-in-out infinite;
+  animation-delay: -10s;
+  background: radial-gradient(circle, rgba(33,150,243,0.06) 0%, transparent 70%);
+}
+
+.hr-shape-4 {
+  width: 350px;
+  height: 350px;
+  bottom: -5%;
+  right: 20%;
+  animation: float-shape 28s ease-in-out infinite reverse;
+  animation-delay: -15s;
+  background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+}
+
+.hr-shape-5 {
+  width: 200px;
+  height: 200px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse-shape 8s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(252,211,77,0.07) 0%, transparent 70%);
+}
+
+@keyframes float-shape {
+  0%, 100% {
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    transform: translate(30px, -30px) scale(1.1);
+  }
+  50% {
+    transform: translate(-20px, 20px) scale(0.9);
+  }
+  75% {
+    transform: translate(20px, 30px) scale(1.05);
+  }
+}
+
+@keyframes pulse-shape {
+  0%, 100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.3);
+    opacity: 0.3;
+  }
 }
 
 /* ── Content ── */

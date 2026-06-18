@@ -1,18 +1,19 @@
 // API Configuration
-// IMPORTANT: Replace with your local IP address when testing on physical device
+// In Expo SDK 54+, EXPO_PUBLIC_* variables are available at process.env during build
+// They are statically replaced at build time, not runtime
+// So we must use them directly, not via a function
+
+// This will be replaced at build time by Metro bundler
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.jktaxitamilnadu.com';
 
 export const API_CONFIG = {
-  // Use the appropriate URL based on platform:
-  // - Web: http://localhost:8000
-  // - Android Emulator: http://10.0.2.2:8000
-  // - iOS Simulator: http://localhost:8000
-  // - Physical Device: http://YOUR_LOCAL_IP:8000 (e.g., http://192.168.1.100:8000)
-
-  BASE_URL: 'http://10.40.122.233:8000',  // Update this for your platform
+  BASE_URL: API_URL,
   TIMEOUT: 30000,
 };
 
-// To find your local IP:
-// - Windows: ipconfig
-// - Mac/Linux: ifconfig or ip addr
-// Look for something like 192.168.x.x or 10.0.x.x
+// Debug: Log the resolved API URL
+console.log('📡 [CONFIG] API_URL resolved to:', API_URL);
+
+// For local testing, update .env with:
+// EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:8000
+// Then restart: npm start --clear

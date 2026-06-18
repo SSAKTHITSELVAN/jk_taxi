@@ -258,7 +258,6 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
       // Get current location
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
-        timeout: 10000,
       });
 
       const currentLocation: LocationResult = {

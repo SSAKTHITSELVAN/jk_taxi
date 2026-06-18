@@ -49,7 +49,8 @@ export default function LoginScreen() {
     try {
       clearError();
       await login(phone, password);
-      router.replace('/(tabs)');
+      // Navigate to home screen after successful login
+      router.replace('/');
     } catch (err) {
       Alert.alert('Login Failed', error || 'Please check your credentials');
     }

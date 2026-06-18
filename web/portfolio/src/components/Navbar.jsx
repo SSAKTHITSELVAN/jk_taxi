@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, Phone, ArrowRight } from 'lucide-react'
 import './Navbar.css'
+import logoImg from '../assets/jk_taxi_logo_v2_c_1_us_4800_rbg.png'
 
 const LINKS = [
   { label: 'Services',     href: '#services'     },
@@ -26,8 +27,7 @@ export default function Navbar() {
         <div className="nb-inner">
 
           <a href="#" className="nb-logo" onClick={close}>
-            <span className="nb-logo-sq">JK</span>
-            <span className="nb-logo-txt">Taxi</span>
+            <img src={logoImg} alt="JK Taxi" className="nb-logo-img" />
           </a>
 
           <nav className="nb-links">
@@ -63,8 +63,7 @@ export default function Navbar() {
             >
               <div className="nb-drawer-hd">
                 <a href="#" className="nb-logo" onClick={close}>
-                  <span className="nb-logo-sq">JK</span>
-                  <span className="nb-logo-txt" style={{color:'#0F172A'}}>Taxi</span>
+                  <img src={logoImg} alt="JK Taxi" className="nb-logo-img" />
                 </a>
                 <button className="nb-drawer-close" onClick={close}><X size={18}/></button>
               </div>

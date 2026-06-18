@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   ViewStyle,
   TextStyle,
+  View,
 } from 'react-native';
 import { Colors, Spacing, BorderRadius, FontSizes, FontWeights } from '../../constants/theme';
 
@@ -19,6 +20,7 @@ interface ButtonProps {
   fullWidth?: boolean;
   style?: ViewStyle;
   textStyle?: TextStyle;
+  icon?: React.ReactNode;
 }
 
 export const Button: React.FC<ButtonProps> = ({
@@ -31,6 +33,7 @@ export const Button: React.FC<ButtonProps> = ({
   fullWidth = false,
   style,
   textStyle,
+  icon,
 }) => {
   const buttonStyles = [
     styles.button,
@@ -53,7 +56,10 @@ export const Button: React.FC<ButtonProps> = ({
       {loading ? (
         <ActivityIndicator color={variant === 'primary' ? Colors.white : Colors.primary} />
       ) : (
-        <Text style={textStyles}>{title}</Text>
+        <View style={styles.content}>
+          {icon && <View style={styles.icon}>{icon}</View>}
+          <Text style={textStyles}>{title}</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
@@ -65,6 +71,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: BorderRadius.md,
     flexDirection: 'row',
+  },
+  content: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  icon: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   fullWidth: {
     width: '100%',

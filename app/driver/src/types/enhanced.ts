@@ -1,13 +1,32 @@
 // Enhanced driver types for V2 API
 
+export interface Location {
+  latitude: number;
+  longitude: number;
+  address: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+}
+
+export interface VehicleType {
+  id: string;
+  name: string;
+  category: string;
+}
+
 export interface EnhancedRide {
   id: string;
   user_id: string;
   driver_id?: string;
   trip_type: string;
   vehicle_category: string;
-  pickup_location: string;
-  dropoff_location?: string;
+  pickup_location: Location | string;
+  dropoff_location?: Location | string;
   pickup_lat: number;
   pickup_lng: number;
   dropoff_lat?: number;
@@ -33,6 +52,7 @@ export interface EnhancedRide {
   driver_notes?: string;
   ride_otp: string;
   otp_verified: boolean;
+  otp?: string; // Alias for ride_otp
   status: string;
   fare: number;
   base_fare: number;
@@ -46,9 +66,12 @@ export interface EnhancedRide {
   payment_method: string;
   transaction_id?: string;
   distance_km: number;
+  distance?: number; // Alias for distance_km
   eta_minutes: number;
   created_at: string;
   updated_at: string;
+  customer?: Customer;
+  vehicle_type?: VehicleType;
 }
 
 export interface VerifyOTPRequest {

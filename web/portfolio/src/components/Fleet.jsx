@@ -4,7 +4,7 @@ import './Fleet.css'
 
 const vehicles = [
   {
-    img: 'https://images.unsplash.com/photo-1592853598064-3f3c4d657e11?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'Mini',
     type: 'Hatchback',
     seats: 4,
@@ -15,7 +15,7 @@ const vehicles = [
     accentClass: 'fleet__accent--green',
   },
   {
-    img: 'https://images.unsplash.com/photo-1555215695-3004980ad54e?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'Sedan',
     type: 'Sedan',
     seats: 4,
@@ -26,7 +26,7 @@ const vehicles = [
     accentClass: 'fleet__accent--purple',
   },
   {
-    img: 'https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'SUV',
     type: 'SUV / MUV',
     seats: 7,
@@ -37,7 +37,7 @@ const vehicles = [
     accentClass: 'fleet__accent--blue',
   },
   {
-    img: 'https://images.unsplash.com/photo-1621929747188-0b4dc28498d2?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'Premium',
     type: 'Luxury',
     seats: 4,
@@ -48,7 +48,7 @@ const vehicles = [
     accentClass: 'fleet__accent--yellow',
   },
   {
-    img: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/13082172/pexels-photo-13082172.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'Auto',
     type: 'Auto Rickshaw',
     seats: 3,
@@ -59,7 +59,7 @@ const vehicles = [
     accentClass: 'fleet__accent--yellow',
   },
   {
-    img: 'https://images.unsplash.com/photo-1609609806578-b96e96e86ac5?w=600&q=75&auto=format&fit=crop',
+    img: 'https://images.pexels.com/photos/36875809/pexels-photo-36875809.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
     name: 'Bike',
     type: 'Two-Wheeler',
     seats: 1,
