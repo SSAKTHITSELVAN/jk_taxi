@@ -257,7 +257,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       )}
 
       {/* Floating Location Card */}
-      <View style={styles.floatingLocationCard}>
+      <View style={[styles.floatingLocationCard, { top: insets.top + 12 }]}>
         <TouchableOpacity style={styles.menuButton} onPress={toggleMenu}>
           <Ionicons name="menu" size={24} color="#000000" />
         </TouchableOpacity>
@@ -596,7 +596,7 @@ const styles = StyleSheet.create({
   },
   floatingLocationCard: {
     position: 'absolute',
-    top: Platform.OS === 'ios' ? 60 : 50,
+    top: 50,
     left: Spacing.md,
     right: Spacing.md,
     flexDirection: 'row',
@@ -654,7 +654,7 @@ const styles = StyleSheet.create({
   },
   menuHeader: {
     backgroundColor: Colors.primary,
-    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingTop: 60,
     paddingBottom: Spacing.lg,
     paddingHorizontal: Spacing.lg,
   },

@@ -37,10 +37,11 @@ export default function RootLayout() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: '#F8F9FA' },
+          freezeOnBlur: true,
         }}
       >
         <Stack.Screen name="(auth)" />
-        <Stack.Screen name="index" />
+        <Stack.Screen name="index" options={{ freezeOnBlur: true }} />
         <Stack.Screen name="rides" />
         <Stack.Screen name="profile" />
         <Stack.Screen name="book-ride" />
@@ -50,7 +51,7 @@ export default function RootLayout() {
         <Stack.Screen name="edit-profile" />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
-      <StatusBar style="dark" />
+      <StatusBar style="dark" translucent={true} />
     </ThemeProvider>
   );
 }

@@ -218,14 +218,20 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
                       <View style={styles.helpCallIcon}>
                         <Ionicons name="call" size={16} color="#FFF" />
                       </View>
-                      <Text style={styles.helpCallNumber}>9677 895 027</Text>
+                      <View style={styles.helpCallTextContainer}>
+                        <Text style={styles.helpCallLabel}>Help Line 1</Text>
+                        <Text style={styles.helpCallNumber}>9677 895 027</Text>
+                      </View>
                       <Ionicons name="chevron-forward" size={16} color="#CCC" />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.helpCallRow} onPress={() => Linking.openURL('tel:9677885027')}>
+                    <TouchableOpacity style={[styles.helpCallRow, { borderBottomWidth: 0 }]} onPress={() => Linking.openURL('tel:9677885027')}>
                       <View style={styles.helpCallIcon}>
                         <Ionicons name="call" size={16} color="#FFF" />
                       </View>
-                      <Text style={styles.helpCallNumber}>9677 885 027</Text>
+                      <View style={styles.helpCallTextContainer}>
+                        <Text style={styles.helpCallLabel}>Help Line 2</Text>
+                        <Text style={styles.helpCallNumber}>9677 885 027</Text>
+                      </View>
                       <Ionicons name="chevron-forward" size={16} color="#CCC" />
                     </TouchableOpacity>
                   </View>
@@ -378,9 +384,11 @@ const styles = StyleSheet.create({
   noDriversTitle: { fontSize: FontSizes.md, fontWeight: FontWeights.bold, color: '#333', marginTop: Spacing.sm },
   noDriversSubtext: { fontSize: FontSizes.sm, color: '#666', textAlign: 'center', marginTop: 4, marginBottom: Spacing.md },
   helpDeskContainer: { width: '100%', backgroundColor: '#F8F9FA', borderRadius: 12, padding: Spacing.sm },
-  helpCallRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  helpCallIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md },
-  helpCallNumber: { flex: 1, fontSize: FontSizes.md, fontWeight: FontWeights.semibold, color: '#000' },
+  helpCallRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.sm, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  helpCallIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md },
+  helpCallTextContainer: { flex: 1 },
+  helpCallLabel: { fontSize: FontSizes.xs, color: '#888', fontWeight: FontWeights.medium, marginBottom: 2 },
+  helpCallNumber: { fontSize: FontSizes.md, fontWeight: FontWeights.bold, color: '#000', letterSpacing: 0.5 },
 
   // Driver
   driverSection: { marginBottom: Spacing.sm },
