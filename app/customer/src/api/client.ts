@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG } from '../config';
 import { router } from 'expo-router';
@@ -7,6 +7,8 @@ class ApiClient {
   private client: AxiosInstance;
   private inMemoryToken: string | null = null;
   private logoutCallback: (() => void) | null = null;
+  private isRefreshing: boolean = false;
+  private failedQueue: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = [];
 
   constructor() {
     this.client = axios.create({
@@ -17,10 +19,8 @@ class ApiClient {
       },
     });
 
-    // Request interceptor to add auth token
     this.client.interceptors.request.use(
       async (config) => {
-        // Debug logging
         console.log('🌐 [API REQUEST]', config.method?.toUpperCase(), config.url);
         console.log('📍 [BASE URL]', config.baseURL);
         console.log('📦 [DATA]', JSON.stringify(config.data));
@@ -41,50 +41,90 @@ class ApiClient {
           console.log('⚠️  [STORAGE] Could not access token storage:', error);
           if (this.inMemoryToken) {
             config.headers.Authorization = `Bearer ${this.inMemoryToken}`;
-            console.log('🔑 [AUTH] Token added from memory (storage failed)');
           }
         }
         return config;
       },
-      (error) => {
-        console.error('❌ [REQUEST ERROR]', error.message);
-        return Promise.reject(error);
-      }
+      (error) => Promise.reject(error)
     );
 
-    // Response interceptor for error handling
     this.client.interceptors.response.use(
       (response) => {
         console.log('✅ [API SUCCESS]', response.status, response.config.url);
         return response;
       },
       async (error: AxiosError) => {
-        // Handle 401 first and suppress further logs
-        if (error.response?.status === 401) {
-          console.log('🚪 [401 UNAUTHORIZED] Token expired or invalid - logging out');
-          await this.handleUnauthorized();
-          return Promise.reject(error);
+        const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          // Don't retry refresh endpoint itself
+          if (originalRequest.url?.includes('/auth/refresh')) {
+            await this.handleLogout();
+            return Promise.reject(error);
+          }
+
+          // Try to refresh the token
+          if (this.isRefreshing) {
+            return new Promise((resolve, reject) => {
+              this.failedQueue.push({ resolve, reject });
+            }).then((token) => {
+              originalRequest.headers.Authorization = `Bearer ${token}`;
+              return this.client(originalRequest);
+            });
+          }
+
+          originalRequest._retry = true;
+          this.isRefreshing = true;
+
+          try {
+            const refreshToken = await AsyncStorage.getItem('refresh_token');
+            if (!refreshToken) {
+              throw new Error('No refresh token');
+            }
+
+            const response = await axios.post(
+              `${API_CONFIG.BASE_URL}/api/auth/refresh`,
+              { refresh_token: refreshToken },
+              { headers: { 'Content-Type': 'application/json' } }
+            );
+
+            const { access_token, refresh_token: newRefreshToken } = response.data;
+
+            this.inMemoryToken = access_token;
+            await AsyncStorage.setItem('access_token', access_token);
+            await AsyncStorage.setItem('refresh_token', newRefreshToken);
+
+            console.log('🔄 [TOKEN REFRESHED] New access token obtained');
+
+            // Retry all queued requests
+            this.failedQueue.forEach(({ resolve }) => resolve(access_token));
+            this.failedQueue = [];
+
+            originalRequest.headers.Authorization = `Bearer ${access_token}`;
+            return this.client(originalRequest);
+          } catch (refreshError) {
+            console.log('🚪 [REFRESH FAILED] Logging out');
+            this.failedQueue.forEach(({ reject }) => reject(refreshError));
+            this.failedQueue = [];
+            await this.handleLogout();
+            return Promise.reject(refreshError);
+          } finally {
+            this.isRefreshing = false;
+          }
         }
 
-        // Don't log 404 "No active ride" as error - it's expected
+        // Don't log 404 "No active ride" as error
         const isNoActiveRide = error.response?.status === 404 &&
                                error.config?.url?.includes('/active');
 
-        if (!isNoActiveRide) {
+        if (!isNoActiveRide && error.response?.status !== 401) {
           console.error('❌ [API ERROR]', error.message);
           console.error('📍 [URL]', error.config?.url);
-          console.error('📍 [BASE URL]', error.config?.baseURL);
-
           if (error.response) {
             console.error('📝 [STATUS]', error.response.status);
             console.error('📝 [DATA]', JSON.stringify(error.response.data));
-          } else if (error.request) {
-            console.error('📝 [NO RESPONSE] Request was made but no response received');
-            console.error('📝 [REQUEST]', error.request);
-          } else {
-            console.error('📝 [ERROR]', error.message);
           }
-        } else {
+        } else if (isNoActiveRide) {
           console.log('ℹ️  [NO ACTIVE RIDE] No active ride found (this is normal)');
         }
 
@@ -93,24 +133,20 @@ class ApiClient {
     );
   }
 
-  private async handleUnauthorized() {
-    // Clear tokens
+  private async handleLogout() {
     this.inMemoryToken = null;
 
     try {
-      // Clear all auth data from storage
       await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user']);
       console.log('✅ [LOGOUT] Storage cleared');
     } catch (error) {
       console.log('⚠️  [STORAGE] Could not clear storage:', error);
     }
 
-    // Call logout callback if registered (from auth store)
     if (this.logoutCallback) {
       this.logoutCallback();
     }
 
-    // Navigate to login screen
     try {
       router.replace('/login');
       console.log('✅ [LOGOUT] Redirected to login');

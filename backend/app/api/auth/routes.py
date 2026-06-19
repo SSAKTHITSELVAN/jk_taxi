@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
-from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, verify_otp
+from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token, verify_otp, decode_token
 from app.schemas.auth import (
     UserRegister, UserLogin, DriverRegister, DriverLogin,
     AdminLogin, Token, VerifyOTP
@@ -212,5 +213,39 @@ async def login_admin(admin_data: AdminLogin, db: Session = Depends(get_db)):
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
+        "token_type": "bearer"
+    }
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_access_token(request: RefreshTokenRequest, db: Session = Depends(get_db)):
+    """Refresh access token using refresh token"""
+    payload = decode_token(request.refresh_token)
+
+    if not payload or payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+
+    user_id = payload.get("sub")
+    role = payload.get("role", "user")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload"
+        )
+
+    access_token = create_access_token(data={"sub": user_id, "role": role})
+    new_refresh_token = create_refresh_token(data={"sub": user_id, "role": role})
+
+    return {
+        "access_token": access_token,
+        "refresh_token": new_refresh_token,
         "token_type": "bearer"
     }

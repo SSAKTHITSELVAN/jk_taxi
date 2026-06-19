@@ -10,15 +10,23 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  StatusBar,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapboxMap } from './MapboxMap';
 import { RideBottomSheet } from '../ride/RideBottomSheet';
 import { useAuthStore } from '../../store/authStore';
 import { useRideStore } from '../../store/rideStore';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
+import { MAPBOX_ACCESS_TOKEN } from '../../config/mapbox-config';
+import { bookingEnhancedApi, userEnhancedApi } from '../../api/booking-enhanced';
+import { EnhancedRide, SavedPlaces } from '../../types/enhanced';
 
 const { width, height } = Dimensions.get('window');
 
@@ -29,6 +37,7 @@ interface MapHomeScreenProps {
 export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const { user, logout } = useAuthStore();
   const { activeRide, getActiveRide } = useRideStore();
+  const insets = useSafeAreaInsets();
 
   // Default location (Bangalore city center)
   const [location, setLocation] = useState({
@@ -40,12 +49,53 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [recentDropoffs, setRecentDropoffs] = useState<Array<{ name: string; address: string; latitude: number; longitude: number }>>([]);
+  const [savedPlaces, setSavedPlaces] = useState<SavedPlaces>({});
+  const [showLocationSearch, setShowLocationSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Array<{ name: string; address: string; latitude: number; longitude: number }>>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
+  const searchInputRef = useRef<TextInput>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const menuSlideAnim = useRef(new Animated.Value(-320)).current;
 
   useEffect(() => {
     getUserLocation();
+    fetchRecentAndSaved();
   }, []);
+
+  const fetchRecentAndSaved = async () => {
+    try {
+      const [history, places] = await Promise.all([
+        bookingEnhancedApi.getRideHistory().catch(() => []),
+        userEnhancedApi.getSavedPlaces().catch(() => ({})),
+      ]);
+
+      if (places) setSavedPlaces(places);
+
+      if (history && history.length > 0) {
+        const seen = new Set<string>();
+        const recent: Array<{ name: string; address: string; latitude: number; longitude: number }> = [];
+        for (const ride of history) {
+          if (ride.dropoff_location && ride.dropoff_lat && ride.dropoff_lng) {
+            const key = `${ride.dropoff_lat.toFixed(3)},${ride.dropoff_lng.toFixed(3)}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              recent.push({
+                name: ride.dropoff_location.split(',')[0],
+                address: ride.dropoff_location,
+                latitude: ride.dropoff_lat,
+                longitude: ride.dropoff_lng,
+              });
+            }
+            if (recent.length >= 5) break;
+          }
+        }
+        setRecentDropoffs(recent);
+      }
+    } catch {}
+  };
 
   const getUserLocation = async () => {
     try {
@@ -99,6 +149,58 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
     }
   };
 
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (searchQuery.length > 2) {
+      searchDebounceRef.current = setTimeout(() => {
+        searchForLocation(searchQuery);
+      }, 300);
+    } else {
+      setSearchResults([]);
+    }
+
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery]);
+
+  const searchForLocation = async (query: string) => {
+    setIsSearchingLocation(true);
+    try {
+      let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=5&country=IN&types=place,locality,neighborhood,address,poi`;
+      url += `&proximity=${location.longitude},${location.latitude}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.features && data.features.length > 0) {
+        const mapped = data.features.map((feature: any) => ({
+          name: feature.text,
+          address: feature.place_name,
+          latitude: feature.center[1],
+          longitude: feature.center[0],
+        }));
+        setSearchResults(mapped);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Location search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
+
+  const handleLocationSearchSelect = (item: { name: string; address: string; latitude: number; longitude: number }) => {
+    setLocation({ latitude: item.latitude, longitude: item.longitude });
+    setLocationName(item.name || item.address.split(',')[0]);
+    setShowLocationSearch(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  };
+
   const toggleMenu = () => {
     const toValue = menuOpen ? -320 : 0; // Fully hide at -320
     Animated.spring(menuSlideAnim, {
@@ -135,7 +237,11 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
           <Ionicons name="menu" size={24} color="#000000" />
         </TouchableOpacity>
 
-        <View style={styles.locationInfo}>
+        <TouchableOpacity
+          style={styles.locationInfo}
+          onPress={() => setShowLocationSearch(true)}
+          activeOpacity={0.7}
+        >
           {isLoadingLocation ? (
             <ActivityIndicator size="small" color={Colors.primary} />
           ) : (
@@ -144,7 +250,8 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
           <Text style={styles.locationText} numberOfLines={1}>
             {locationName}
           </Text>
-        </View>
+          <Ionicons name="pencil" size={14} color="#999" style={{ marginLeft: 4 }} />
+        </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.notificationButton}
@@ -285,36 +392,113 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       {/* Center Location Button */}
       <TouchableOpacity
         style={styles.centerButton}
-        onPress={() => {
-          // In a real app, this would re-center on user location
-          console.log('Center on user location');
-        }}
+        onPress={getUserLocation}
       >
         <Ionicons name="locate" size={24} color={Colors.primary} />
       </TouchableOpacity>
 
+      {/* Location Search Modal */}
+      <Modal
+        visible={showLocationSearch}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setShowLocationSearch(false)}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.searchModalContainer}
+        >
+          <View style={[styles.searchModalHeader, { paddingTop: insets.top + 12 }]}>
+            <TouchableOpacity onPress={() => {
+              setShowLocationSearch(false);
+              setSearchQuery('');
+              setSearchResults([]);
+            }}>
+              <Ionicons name="arrow-back" size={24} color="#000" />
+            </TouchableOpacity>
+            <Text style={styles.searchModalTitle}>Set your location</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          <View style={styles.searchModalInputContainer}>
+            <Ionicons name="search" size={20} color="#999" />
+            <TextInput
+              ref={searchInputRef}
+              style={styles.searchModalInput}
+              placeholder="Search for area, street name..."
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus={true}
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+                <Ionicons name="close-circle" size={20} color="#999" />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          <TouchableOpacity
+            style={styles.useGpsButton}
+            onPress={() => {
+              setShowLocationSearch(false);
+              setSearchQuery('');
+              setSearchResults([]);
+              getUserLocation();
+            }}
+          >
+            <View style={styles.useGpsIconContainer}>
+              <Ionicons name="navigate" size={20} color={Colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.useGpsText}>Use current location</Text>
+              <Text style={styles.useGpsSubtext}>Via GPS</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#CCC" />
+          </TouchableOpacity>
+
+          {isSearchingLocation && (
+            <View style={styles.searchLoadingContainer}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={styles.searchLoadingText}>Searching...</Text>
+            </View>
+          )}
+
+          <ScrollView style={styles.searchResultsList} keyboardShouldPersistTaps="handled">
+            {searchResults.map((item, index) => (
+              <TouchableOpacity
+                key={`${item.latitude}-${item.longitude}-${index}`}
+                style={styles.searchResultItem}
+                onPress={() => handleLocationSearchSelect(item)}
+              >
+                <View style={styles.searchResultIconContainer}>
+                  <Ionicons name="location-outline" size={20} color="#666" />
+                </View>
+                <View style={styles.searchResultTextContainer}>
+                  <Text style={styles.searchResultName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.searchResultAddress} numberOfLines={2}>{item.address}</Text>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
+
       {/* Bottom Booking Card OR Active Ride Sheet */}
       {showActiveRideSheet ? (
-        // Active Ride Bottom Sheet (Rapido-style)
         <RideBottomSheet ride={activeRide as any} onRideComplete={handleRideComplete} />
       ) : (
         <View style={styles.bottomCard}>
           {activeRide ? (
-            // Banner for scheduled or booked for others
             <TouchableOpacity
               style={styles.activeRideCard}
               onPress={() => router.push('/rides')}
             >
               <View style={styles.activeRideLeft}>
-                <Ionicons
-                  name="car"
-                  size={28}
-                  color={Colors.primary}
-                />
+                <Ionicons name="car" size={28} color={Colors.primary} />
                 <View style={styles.activeRideInfo}>
-                  <Text style={styles.activeRideTitle}>
-                    Active Ride
-                  </Text>
+                  <Text style={styles.activeRideTitle}>Active Ride</Text>
                   <Text style={styles.activeRideStatus}>
                     {activeRide.status.toUpperCase()}
                   </Text>
@@ -323,7 +507,6 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
               <Ionicons name="chevron-forward" size={24} color="#000" />
             </TouchableOpacity>
           ) : (
-            // Book Ride Button
             <>
               <Text style={styles.bookingPrompt}>Where to?</Text>
               <TouchableOpacity style={styles.searchBox} onPress={onBookRide}>
@@ -331,29 +514,46 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
                 <Text style={styles.searchText}>Search destination</Text>
               </TouchableOpacity>
 
-              {/* Quick Actions */}
-              <View style={styles.quickActionsRow}>
-                <TouchableOpacity style={styles.quickAction} onPress={onBookRide}>
-                  <View style={styles.quickActionIcon}>
-                    <Ionicons name="time" size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.quickActionText}>Ride Later</Text>
-                </TouchableOpacity>
+              {/* Saved Places */}
+              {(savedPlaces.home || savedPlaces.work) && (
+                <View style={styles.savedPlacesRow}>
+                  {savedPlaces.home && (
+                    <TouchableOpacity style={styles.savedPlaceChip} onPress={onBookRide}>
+                      <Ionicons name="home" size={16} color={Colors.primary} />
+                      <Text style={styles.savedPlaceText} numberOfLines={1}>Home</Text>
+                    </TouchableOpacity>
+                  )}
+                  {savedPlaces.work && (
+                    <TouchableOpacity style={styles.savedPlaceChip} onPress={onBookRide}>
+                      <Ionicons name="briefcase" size={16} color={Colors.primary} />
+                      <Text style={styles.savedPlaceText} numberOfLines={1}>Work</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
 
-                <TouchableOpacity style={styles.quickAction} onPress={onBookRide}>
-                  <View style={styles.quickActionIcon}>
-                    <Ionicons name="swap-horizontal" size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.quickActionText}>Round Trip</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity style={styles.quickAction} onPress={onBookRide}>
-                  <View style={styles.quickActionIcon}>
-                    <Ionicons name="briefcase" size={22} color="#FFFFFF" />
-                  </View>
-                  <Text style={styles.quickActionText}>Package</Text>
-                </TouchableOpacity>
-              </View>
+              {/* Recent/Popular Destinations */}
+              {recentDropoffs.length > 0 && (
+                <View style={styles.recentSection}>
+                  <Text style={styles.recentTitle}>Recent</Text>
+                  {recentDropoffs.slice(0, 3).map((item, index) => (
+                    <TouchableOpacity
+                      key={`${item.latitude}-${index}`}
+                      style={styles.recentItem}
+                      onPress={onBookRide}
+                    >
+                      <View style={styles.recentIconContainer}>
+                        <Ionicons name="time-outline" size={16} color="#666" />
+                      </View>
+                      <View style={styles.recentTextContainer}>
+                        <Text style={styles.recentName} numberOfLines={1}>{item.name}</Text>
+                        <Text style={styles.recentAddress} numberOfLines={1}>{item.address}</Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={16} color="#CCC" />
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </>
           )}
         </View>
@@ -637,34 +837,66 @@ const styles = StyleSheet.create({
     marginLeft: Spacing.sm,
     fontWeight: FontWeights.medium,
   },
-  quickActionsRow: {
+  savedPlacesRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
   },
-  quickAction: {
+  savedPlaceChip: {
+    flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
+    backgroundColor: '#F0F5FF',
+    borderRadius: BorderRadius.xl,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#E0E0FF',
   },
-  quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: BorderRadius.full,
-    backgroundColor: Colors.primary,
+  savedPlaceText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    color: '#333',
+  },
+  recentSection: {
+    marginTop: Spacing.xs,
+  },
+  recentTitle: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    color: '#999',
+    marginBottom: Spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  recentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  recentIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F5F5F5',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Spacing.xs,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    marginRight: Spacing.sm,
   },
-  quickActionText: {
-    fontSize: FontSizes.xs,
-    color: '#000000',
+  recentTextContainer: {
+    flex: 1,
+  },
+  recentName: {
+    fontSize: FontSizes.sm,
     fontWeight: FontWeights.semibold,
-    textAlign: 'center',
+    color: '#000',
+  },
+  recentAddress: {
+    fontSize: FontSizes.xs,
+    color: '#999',
+    marginTop: 1,
   },
   activeRideCard: {
     flexDirection: 'row',
@@ -713,5 +945,112 @@ const styles = StyleSheet.create({
   customMarker: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  searchModalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  searchModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  searchModalTitle: {
+    fontSize: FontSizes.lg,
+    fontWeight: FontWeights.bold,
+    color: '#000',
+  },
+  searchModalInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    margin: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: '#F5F5F5',
+    borderRadius: BorderRadius.xl,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  searchModalInput: {
+    flex: 1,
+    fontSize: FontSizes.md,
+    color: '#000',
+    marginLeft: Spacing.sm,
+    paddingVertical: Spacing.xs,
+  },
+  useGpsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+  },
+  useGpsIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F0F5FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  useGpsText: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+    color: Colors.primary,
+  },
+  useGpsSubtext: {
+    fontSize: FontSizes.sm,
+    color: '#999',
+    marginTop: 2,
+  },
+  searchLoadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.md,
+  },
+  searchLoadingText: {
+    fontSize: FontSizes.sm,
+    color: '#999',
+    marginLeft: Spacing.sm,
+  },
+  searchResultsList: {
+    flex: 1,
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F5F5',
+  },
+  searchResultIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  searchResultTextContainer: {
+    flex: 1,
+  },
+  searchResultName: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+    color: '#000',
+    marginBottom: 2,
+  },
+  searchResultAddress: {
+    fontSize: FontSizes.sm,
+    color: '#666',
   },
 });

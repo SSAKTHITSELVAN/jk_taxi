@@ -13,6 +13,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
+import { MAPBOX_ACCESS_TOKEN } from '../../config/mapbox-config';
 
 interface LocationSearchInputProps {
   placeholder: string;
@@ -34,130 +35,6 @@ export interface LocationSearchInputRef {
   focus: () => void;
 }
 
-// Predefined locations for demo
-const PREDEFINED_LOCATIONS: LocationResult[] = [
-  {
-    name: 'MG Road',
-    address: 'MG Road, Bangalore',
-    latitude: 12.9716,
-    longitude: 77.5946,
-  },
-  {
-    name: 'Koramangala',
-    address: 'Koramangala, Bangalore',
-    latitude: 12.9352,
-    longitude: 77.6245,
-  },
-  {
-    name: 'Indiranagar',
-    address: 'Indiranagar, Bangalore',
-    latitude: 12.9716,
-    longitude: 77.6412,
-  },
-  {
-    name: 'Whitefield',
-    address: 'Whitefield, Bangalore',
-    latitude: 12.9698,
-    longitude: 77.7500,
-  },
-  {
-    name: 'Electronic City',
-    address: 'Electronic City, Bangalore',
-    latitude: 12.8456,
-    longitude: 77.6603,
-  },
-  {
-    name: 'Marathahalli',
-    address: 'Marathahalli, Bangalore',
-    latitude: 12.9591,
-    longitude: 77.6974,
-  },
-  {
-    name: 'Jayanagar',
-    address: 'Jayanagar, Bangalore',
-    latitude: 12.9250,
-    longitude: 77.5938,
-  },
-  {
-    name: 'HSR Layout',
-    address: 'HSR Layout, Bangalore',
-    latitude: 12.9116,
-    longitude: 77.6385,
-  },
-  {
-    name: 'BTM Layout',
-    address: 'BTM Layout, Bangalore',
-    latitude: 12.9165,
-    longitude: 77.6101,
-  },
-  {
-    name: 'Banashankari',
-    address: 'Banashankari, Bangalore',
-    latitude: 12.9250,
-    longitude: 77.5485,
-  },
-  {
-    name: 'Silk Board',
-    address: 'Silk Board, Bangalore',
-    latitude: 12.9180,
-    longitude: 77.6229,
-  },
-  {
-    name: 'Malleshwaram',
-    address: 'Malleshwaram, Bangalore',
-    latitude: 13.0050,
-    longitude: 77.5710,
-  },
-  {
-    name: 'Rajajinagar',
-    address: 'Rajajinagar, Bangalore',
-    latitude: 12.9897,
-    longitude: 77.5544,
-  },
-  {
-    name: 'Yeshwanthpur',
-    address: 'Yeshwanthpur, Bangalore',
-    latitude: 13.0287,
-    longitude: 77.5386,
-  },
-  {
-    name: 'Hebbal',
-    address: 'Hebbal, Bangalore',
-    latitude: 13.0358,
-    longitude: 77.5970,
-  },
-  {
-    name: 'Airport',
-    address: 'Kempegowda International Airport, Bangalore',
-    latitude: 13.1986,
-    longitude: 77.7066,
-  },
-  {
-    name: 'Railway Station',
-    address: 'Bangalore City Railway Station',
-    latitude: 12.9767,
-    longitude: 77.5713,
-  },
-  {
-    name: 'Majestic',
-    address: 'Majestic Bus Stand, Bangalore',
-    latitude: 12.9767,
-    longitude: 77.5713,
-  },
-  {
-    name: 'Yelahanka',
-    address: 'Yelahanka, Bangalore',
-    latitude: 13.1007,
-    longitude: 77.5963,
-  },
-  {
-    name: 'JP Nagar',
-    address: 'JP Nagar, Bangalore',
-    latitude: 12.9075,
-    longitude: 77.5854,
-  },
-];
-
 export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSearchInputProps>(({
   placeholder,
   onLocationSelect,
@@ -170,9 +47,10 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
   const [results, setResults] = useState<LocationResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const inputRef = useRef<TextInput>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Update query when initialValue changes
   useEffect(() => {
     if (initialValue && initialValue !== query) {
       setQuery(initialValue);
@@ -186,44 +64,85 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
   }));
 
   useEffect(() => {
-    if (query.length > 1) {
-      searchLocation(query);
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+    }
+
+    if (query.length > 2) {
+      debounceRef.current = setTimeout(() => {
+        searchLocation(query);
+      }, 300);
     } else {
       setResults([]);
       setShowResults(false);
     }
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
   }, [query]);
 
   const handleBlur = () => {
-    // Delay hiding results to allow tap to register
     setTimeout(() => {
-      if (results.length > 0 && query.length > 1) {
-        // Keep showing if user is typing
-        return;
-      }
       setShowResults(false);
     }, 300);
   };
 
-  const searchLocation = (searchQuery: string) => {
-    const filtered = PREDEFINED_LOCATIONS.filter((loc) =>
-      loc.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      loc.address.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+  const searchLocation = async (searchQuery: string) => {
+    setIsSearching(true);
+    try {
+      const proximity = await getUserProximity();
+      let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(searchQuery)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=5&country=IN&types=place,locality,neighborhood,address,poi`;
 
-    setResults(filtered);
-    setShowResults(true);
+      if (proximity) {
+        url += `&proximity=${proximity.longitude},${proximity.latitude}`;
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.features && data.features.length > 0) {
+        const mapped: LocationResult[] = data.features.map((feature: any) => ({
+          name: feature.text,
+          address: feature.place_name,
+          latitude: feature.center[1],
+          longitude: feature.center[0],
+        }));
+        setResults(mapped);
+        setShowResults(true);
+      } else {
+        setResults([]);
+        setShowResults(true);
+      }
+    } catch (error) {
+      console.error('Mapbox search error:', error);
+      setResults([]);
+      setShowResults(true);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const getUserProximity = async (): Promise<{ latitude: number; longitude: number } | null> => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getLastKnownPositionAsync();
+        if (loc) {
+          return { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
+        }
+      }
+    } catch {}
+    return null;
   };
 
   const handleSelectLocation = (location: LocationResult) => {
-    console.log('Selected location:', location);
     setQuery(location.address);
     setShowResults(false);
     setResults([]);
     inputRef.current?.blur();
     onLocationSelect(location);
 
-    // Auto-focus next input after a short delay
     if (onFocusNext) {
       setTimeout(() => {
         onFocusNext();
@@ -235,36 +154,46 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
     try {
       setLoadingLocation(true);
 
-      // Check current permission status
       const { status: currentStatus } = await Location.getForegroundPermissionsAsync();
 
       if (currentStatus !== 'granted') {
-        // Request permission
         const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
 
         if (newStatus !== 'granted') {
           Alert.alert(
             'Location Permission',
             'You can still enter your location manually by typing in the search box.',
-            [
-              { text: 'OK', style: 'cancel' },
-            ]
+            [{ text: 'OK', style: 'cancel' }]
           );
           setLoadingLocation(false);
           return;
         }
       }
 
-      // Get current location
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
 
+      const { latitude, longitude } = location.coords;
+
+      // Reverse geocode to get address
+      let locationName = 'Current Location';
+      let locationAddress = 'Your current location';
+      try {
+        const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1`;
+        const response = await fetch(url);
+        const data = await response.json();
+        if (data.features && data.features.length > 0) {
+          locationName = data.features[0].text;
+          locationAddress = data.features[0].place_name;
+        }
+      } catch {}
+
       const currentLocation: LocationResult = {
-        name: 'Current Location',
-        address: 'Your current location',
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        name: locationName,
+        address: locationAddress,
+        latitude,
+        longitude,
       };
 
       handleSelectLocation(currentLocation);
@@ -301,6 +230,9 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
           onBlur={handleBlur}
           placeholderTextColor={Colors.textSecondary}
         />
+        {isSearching && (
+          <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 4 }} />
+        )}
         {showCurrentLocation && query.length === 0 && (
           <TouchableOpacity onPress={handleUseCurrentLocation} disabled={loadingLocation}>
             {loadingLocation ? (
