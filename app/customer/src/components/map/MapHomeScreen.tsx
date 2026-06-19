@@ -20,6 +20,7 @@ import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MapboxMap } from './MapboxMap';
+import { RideTrackingMap } from './RideTrackingMap';
 import { RideBottomSheet } from '../ride/RideBottomSheet';
 import { useAuthStore } from '../../store/authStore';
 import { useRideStore } from '../../store/rideStore';
@@ -36,7 +37,8 @@ interface MapHomeScreenProps {
 
 export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const { user, logout } = useAuthStore();
-  const { activeRide, getActiveRide } = useRideStore();
+  const { activeRide, getActiveRide, driverLocation, startTracking, stopTracking } = useRideStore();
+  const [liveEta, setLiveEta] = useState<{ distance: number; duration: number } | null>(null);
   const insets = useSafeAreaInsets();
 
   // Default location (Bangalore city center)
@@ -96,6 +98,17 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       }
     } catch {}
   };
+
+  // Start/stop ride tracking based on active ride status
+  useEffect(() => {
+    if (activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status)) {
+      startTracking();
+    } else {
+      stopTracking();
+      setLiveEta(null);
+    }
+    return () => stopTracking();
+  }, [activeRide?.status]);
 
   const getUserLocation = async () => {
     try {
@@ -220,16 +233,28 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   // Check if we should show active ride in bottom sheet
   const showActiveRideSheet = activeRide && activeRide.status !== 'pending';
 
+  const isTrackingRide = activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status);
+
   return (
     <View style={styles.container}>
-      {/* Mapbox Map with GPS Location */}
-      <MapboxMap
-        latitude={location.latitude}
-        longitude={location.longitude}
-        showMarker={true}
-        markerTitle={locationName}
-        zoom={14}
-      />
+      {/* Map: tracking view or normal */}
+      {isTrackingRide ? (
+        <RideTrackingMap
+          rideStatus={activeRide.status as 'pending' | 'accepted' | 'started'}
+          pickupLocation={{ latitude: (activeRide as any).pickup_lat, longitude: (activeRide as any).pickup_lng }}
+          dropoffLocation={(activeRide as any).dropoff_lat ? { latitude: (activeRide as any).dropoff_lat, longitude: (activeRide as any).dropoff_lng } : null}
+          driverLocation={driverLocation}
+          onEtaUpdate={(dist, dur) => setLiveEta({ distance: dist, duration: dur })}
+        />
+      ) : (
+        <MapboxMap
+          latitude={location.latitude}
+          longitude={location.longitude}
+          showMarker={true}
+          markerTitle={locationName}
+          zoom={14}
+        />
+      )}
 
       {/* Floating Location Card */}
       <View style={styles.floatingLocationCard}>
@@ -487,7 +512,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 
       {/* Bottom Booking Card OR Active Ride Sheet */}
       {showActiveRideSheet ? (
-        <RideBottomSheet ride={activeRide as any} onRideComplete={handleRideComplete} />
+        <RideBottomSheet ride={activeRide as any} onRideComplete={handleRideComplete} liveEta={liveEta} />
       ) : (
         <View style={styles.bottomCard}>
           {activeRide ? (

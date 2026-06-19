@@ -67,6 +67,21 @@ export const bookingEnhancedApi = {
     const response = await apiClient.get<{ nearby_count: number }>('/api/v2/bookings/nearby-drivers');
     return response.data;
   },
+
+  // Get active ride tracking (driver location)
+  getActiveRideTracking: async (): Promise<{
+    ride_id: string;
+    status: string;
+    driver_lat: number | null;
+    driver_lng: number | null;
+    pickup_lat: number;
+    pickup_lng: number;
+    dropoff_lat: number | null;
+    dropoff_lng: number | null;
+  }> => {
+    const response = await apiClient.get('/api/v2/bookings/active/tracking');
+    return response.data;
+  },
 };
 
 export const userEnhancedApi = {

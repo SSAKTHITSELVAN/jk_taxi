@@ -2,6 +2,12 @@ import apiClient from './client';
 import { EnhancedRide, VerifyOTPRequest } from '../types/enhanced';
 
 export const driverEnhancedApi = {
+  // Update driver location
+  updateLocation: async (latitude: number, longitude: number): Promise<{ status: string }> => {
+    const response = await apiClient.post<{ status: string }>('/api/v2/driver/location', { latitude, longitude });
+    return response.data;
+  },
+
   // Get available rides
   getAvailableRides: async (): Promise<EnhancedRide[]> => {
     const response = await apiClient.get<EnhancedRide[]>('/api/v2/driver/rides/available');

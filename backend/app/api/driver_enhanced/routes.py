@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from typing import List
 from uuid import UUID
 from app.core.dependencies import get_db, get_current_driver
@@ -8,6 +10,25 @@ from app.models.ride_enhanced import RideEnhanced
 from app.models.driver import Driver
 
 router = APIRouter()
+
+
+class LocationUpdate(BaseModel):
+    latitude: float
+    longitude: float
+
+
+@router.post("/location")
+async def update_driver_location(
+    location: LocationUpdate,
+    current_driver: Driver = Depends(get_current_driver),
+    db: Session = Depends(get_db)
+):
+    """Update driver's current GPS location"""
+    current_driver.current_lat = location.latitude
+    current_driver.current_lng = location.longitude
+    current_driver.location_updated_at = func.now()
+    db.commit()
+    return {"status": "ok"}
 
 
 @router.get("/rides/available", response_model=List[RideEnhancedResponse])

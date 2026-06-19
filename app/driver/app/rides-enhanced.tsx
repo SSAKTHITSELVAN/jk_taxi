@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as Location from 'expo-location';
 import { driverEnhancedApi } from '../src/api/driver-enhanced';
 import { OTPVerificationModal } from '../src/components/OTPVerificationModal';
 import { EnhancedRideCard } from '../src/components/EnhancedRideCard';
@@ -24,12 +25,37 @@ export default function RidesEnhancedScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
 
+  const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   useEffect(() => {
     loadRides();
-    // Poll every 10 seconds for updates
     const interval = setInterval(loadRides, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // Push location to server when ride is active
+  useEffect(() => {
+    if (activeRide && (activeRide.status === 'accepted' || activeRide.status === 'started')) {
+      const pushLocation = async () => {
+        try {
+          const { status } = await Location.getForegroundPermissionsAsync();
+          if (status !== 'granted') return;
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+          await driverEnhancedApi.updateLocation(loc.coords.latitude, loc.coords.longitude);
+        } catch {}
+      };
+      pushLocation();
+      locationIntervalRef.current = setInterval(pushLocation, 5000);
+    } else {
+      if (locationIntervalRef.current) {
+        clearInterval(locationIntervalRef.current);
+        locationIntervalRef.current = null;
+      }
+    }
+    return () => {
+      if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
+    };
+  }, [activeRide?.status]);
 
   const loadRides = async () => {
     try {

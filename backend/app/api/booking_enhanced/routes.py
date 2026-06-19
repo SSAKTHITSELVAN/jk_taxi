@@ -209,6 +209,43 @@ async def get_active_booking(
     return enrich_ride_with_driver(active_ride, db)
 
 
+@router.get("/active/tracking")
+async def get_active_ride_tracking(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get active ride tracking data with driver's live location"""
+    active_ride = db.query(RideEnhanced).filter(
+        RideEnhanced.user_id == current_user.id,
+        RideEnhanced.status.in_(["pending", "accepted", "started"])
+    ).first()
+
+    if not active_ride:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No active trackable ride"
+        )
+
+    driver_lat = None
+    driver_lng = None
+    if active_ride.driver_id:
+        driver = db.query(Driver).filter(Driver.id == active_ride.driver_id).first()
+        if driver:
+            driver_lat = driver.current_lat
+            driver_lng = driver.current_lng
+
+    return {
+        "ride_id": str(active_ride.id),
+        "status": active_ride.status,
+        "driver_lat": driver_lat,
+        "driver_lng": driver_lng,
+        "pickup_lat": active_ride.pickup_lat,
+        "pickup_lng": active_ride.pickup_lng,
+        "dropoff_lat": active_ride.dropoff_lat,
+        "dropoff_lng": active_ride.dropoff_lng,
+    }
+
+
 @router.get("/{ride_id}", response_model=RideEnhancedResponse)
 async def get_booking(
     ride_id: UUID,

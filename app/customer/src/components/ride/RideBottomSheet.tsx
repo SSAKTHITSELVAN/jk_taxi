@@ -24,9 +24,10 @@ const MAX_HEIGHT = height * 0.75;
 interface RideBottomSheetProps {
   ride: EnhancedRide;
   onRideComplete: () => void;
+  liveEta?: { distance: number; duration: number } | null;
 }
 
-export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideComplete }) => {
+export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideComplete, liveEta }) => {
   const [nearbyCount, setNearbyCount] = useState(0);
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
@@ -167,7 +168,9 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
             {(ride.status === 'accepted' || ride.status === 'started') && (
               <View style={styles.etaBadge}>
                 <Ionicons name="time" size={12} color={Colors.primary} />
-                <Text style={styles.etaText}>{ride.eta_minutes} min</Text>
+                <Text style={styles.etaText}>
+                  {liveEta ? `${Math.ceil(liveEta.duration)} min` : `${ride.eta_minutes} min`}
+                </Text>
               </View>
             )}
           </View>
