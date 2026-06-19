@@ -177,10 +177,13 @@ export const RideTrackingMap: React.FC<RideTrackingMapProps> = ({
         )}
       </Mapbox.MapView>
 
-      {/* ETA overlay */}
+      {/* ETA overlay near pickup */}
       {routeData && (
-        <View style={[styles.etaOverlay, { top: insets.top + 60 }]}>
+        <View style={styles.etaOverlay}>
+          <Ionicons name="time-outline" size={14} color={Colors.primary} />
           <Text style={styles.etaTime}>{Math.ceil(routeData.duration / 60)} min</Text>
+          <View style={styles.etaDivider} />
+          <Ionicons name="navigate-outline" size={14} color="#666" />
           <Text style={styles.etaDist}>{(routeData.distance / 1000).toFixed(1)} km</Text>
         </View>
       )}
@@ -208,12 +211,13 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4, elevation: 6,
   },
   etaOverlay: {
-    position: 'absolute', left: Spacing.md,
-    backgroundColor: '#FFF', borderRadius: BorderRadius.md,
+    position: 'absolute', bottom: 16, left: Spacing.md,
+    backgroundColor: '#FFF', borderRadius: BorderRadius.lg,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 5,
-    flexDirection: 'row', alignItems: 'center', gap: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
   },
-  etaTime: { fontSize: FontSizes.md, fontWeight: FontWeights.bold, color: Colors.primary },
-  etaDist: { fontSize: FontSizes.sm, color: '#666' },
+  etaDivider: { width: 1, height: 14, backgroundColor: '#E0E0E0' },
+  etaTime: { fontSize: FontSizes.sm, fontWeight: FontWeights.bold, color: Colors.primary },
+  etaDist: { fontSize: FontSizes.sm, fontWeight: FontWeights.medium, color: '#666' },
 });
