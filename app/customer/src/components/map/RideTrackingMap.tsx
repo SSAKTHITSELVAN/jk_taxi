@@ -1,7 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, ANIMATION_DURATION } from '../../config/mapbox-config';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../../constants/theme';
 
@@ -33,6 +34,7 @@ export const RideTrackingMap: React.FC<RideTrackingMapProps> = ({
   driverLocation,
   onEtaUpdate,
 }) => {
+  const insets = useSafeAreaInsets();
   const cameraRef = useRef<Mapbox.Camera>(null);
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const lastFetchRef = useRef<number>(0);
@@ -177,7 +179,7 @@ export const RideTrackingMap: React.FC<RideTrackingMapProps> = ({
 
       {/* ETA overlay */}
       {routeData && (
-        <View style={styles.etaOverlay}>
+        <View style={[styles.etaOverlay, { top: insets.top + 60 }]}>
           <Text style={styles.etaTime}>{Math.ceil(routeData.duration / 60)} min</Text>
           <Text style={styles.etaDist}>{(routeData.distance / 1000).toFixed(1)} km</Text>
         </View>
@@ -206,7 +208,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.4, shadowRadius: 4, elevation: 6,
   },
   etaOverlay: {
-    position: 'absolute', top: 60, left: Spacing.md,
+    position: 'absolute', left: Spacing.md,
     backgroundColor: '#FFF', borderRadius: BorderRadius.md,
     paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm,
     shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 6, elevation: 5,

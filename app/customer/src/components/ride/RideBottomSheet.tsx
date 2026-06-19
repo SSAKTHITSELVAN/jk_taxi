@@ -18,8 +18,8 @@ import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../con
 import { bookingEnhancedApi } from '../../api/booking-enhanced';
 
 const { height } = Dimensions.get('window');
-const MIN_HEIGHT = 220;
-const MAX_HEIGHT = height * 0.75;
+const MIN_HEIGHT = 280;
+const MAX_HEIGHT = height * 0.7;
 
 interface RideBottomSheetProps {
   ride: EnhancedRide;
@@ -32,8 +32,9 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
 
-  const sheetHeight = useRef(new Animated.Value(MIN_HEIGHT)).current;
-  const lastHeight = useRef(MIN_HEIGHT);
+  const initialHeight = ride.status === 'pending' ? 320 : MIN_HEIGHT;
+  const sheetHeight = useRef(new Animated.Value(initialHeight)).current;
+  const lastHeight = useRef(initialHeight);
   const searchPulse = useRef(new Animated.Value(0)).current;
 
   const panResponder = useRef(

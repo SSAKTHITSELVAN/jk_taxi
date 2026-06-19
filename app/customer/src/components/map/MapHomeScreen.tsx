@@ -231,7 +231,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   };
 
   // Check if we should show active ride in bottom sheet
-  const showActiveRideSheet = activeRide && activeRide.status !== 'pending';
+  const showActiveRideSheet = activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status);
 
   const isTrackingRide = activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status);
 
