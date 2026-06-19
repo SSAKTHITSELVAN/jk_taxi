@@ -48,12 +48,15 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
   const [showResults, setShowResults] = useState(false);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [locationSelected, setLocationSelected] = useState(!!initialValue);
   const inputRef = useRef<TextInput>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (initialValue && initialValue !== query) {
       setQuery(initialValue);
+      setLocationSelected(true);
     }
   }, [initialValue]);
 
@@ -68,6 +71,10 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
       clearTimeout(debounceRef.current);
     }
 
+    if (!isFocused || locationSelected) {
+      return;
+    }
+
     if (query.length > 2) {
       debounceRef.current = setTimeout(() => {
         searchLocation(query);
@@ -80,12 +87,25 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [query]);
+  }, [query, isFocused, locationSelected]);
+
+  const handleFocus = () => {
+    setIsFocused(true);
+    if (locationSelected) {
+      setLocationSelected(false);
+      setQuery('');
+      setResults([]);
+      setShowResults(false);
+    } else if (results.length > 0) {
+      setShowResults(true);
+    }
+  };
 
   const handleBlur = () => {
+    setIsFocused(false);
     setTimeout(() => {
       setShowResults(false);
-    }, 300);
+    }, 200);
   };
 
   const searchLocation = async (searchQuery: string) => {
@@ -140,6 +160,7 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
     setQuery(location.address);
     setShowResults(false);
     setResults([]);
+    setLocationSelected(true);
     inputRef.current?.blur();
     onLocationSelect(location);
 
@@ -219,14 +240,10 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
           placeholder={placeholder}
           value={query}
           onChangeText={(text) => {
-            console.log('Text changed:', text);
+            setLocationSelected(false);
             setQuery(text);
           }}
-          onFocus={() => {
-            if (results.length > 0) {
-              setShowResults(true);
-            }
-          }}
+          onFocus={handleFocus}
           onBlur={handleBlur}
           placeholderTextColor={Colors.textSecondary}
         />

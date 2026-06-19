@@ -99,22 +99,32 @@ export default function BookRideScreen() {
       const { status } = await Location.getForegroundPermissionsAsync();
       if (status !== 'granted') return;
 
-      const currentLoc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = currentLoc.coords;
+      // Use last known position first (instant), fallback to fresh GPS
+      let loc = await Location.getLastKnownPositionAsync();
+      if (!loc) {
+        loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      }
+      if (!loc) return;
 
-      let name = 'Current Location';
-      let address = 'Your current location';
+      const { latitude, longitude } = loc.coords;
+
+      // Set immediately with generic name while reverse geocode loads
+      setPickupLocation({ name: 'Current Location', address: 'Fetching address...', latitude, longitude });
+
+      // Then reverse geocode in background
       try {
         const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${longitude},${latitude}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1`;
         const resp = await fetch(url);
         const data = await resp.json();
         if (data.features?.[0]) {
-          name = data.features[0].text;
-          address = data.features[0].place_name;
+          setPickupLocation({
+            name: data.features[0].text,
+            address: data.features[0].place_name,
+            latitude,
+            longitude,
+          });
         }
       } catch {}
-
-      setPickupLocation({ name, address, latitude, longitude });
     } catch {}
   };
 
