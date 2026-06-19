@@ -48,15 +48,23 @@ export default function PickOnMapScreen() {
   const [mapReady, setMapReady] = useState(false);
   const cameraRef = useRef<Mapbox.Camera>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const addressDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialCenter = useRef(getInitialCenter());
+  const lastFetchedLocation = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     // If no initial location, get current location
     if (!initialCenter.current) {
       getCurrentLocation();
     } else {
-      fetchAddress(initialCenter.current.latitude, initialCenter.current.longitude);
+      fetchAddress(initialCenter.current.latitude, initialCenter.current.longitude, true);
     }
+
+    // Cleanup debounce timers
+    return () => {
+      if (addressDebounceRef.current) clearTimeout(addressDebounceRef.current);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -88,17 +96,29 @@ export default function PickOnMapScreen() {
             zoomLevel: 15,
             animationDuration: 1000,
           });
-          fetchAddress(latitude, longitude);
+          fetchAddress(latitude, longitude, true);
         }
       }
     } catch (error) {
       console.log('Could not get current location:', error);
-      fetchAddress(center.latitude, center.longitude);
+      fetchAddress(center.latitude, center.longitude, true);
     }
   };
 
-  const fetchAddress = async (lat: number, lng: number) => {
+  const fetchAddress = async (lat: number, lng: number, skipDebounce = false) => {
+    // Check if location changed significantly (>50m)
+    if (lastFetchedLocation.current) {
+      const latDiff = Math.abs(lastFetchedLocation.current.lat - lat);
+      const lngDiff = Math.abs(lastFetchedLocation.current.lng - lng);
+      // ~0.0005 degrees = ~50 meters
+      if (latDiff < 0.0005 && lngDiff < 0.0005 && !skipDebounce) {
+        return; // Too close to last fetch, skip
+      }
+    }
+
+    lastFetchedLocation.current = { lat, lng };
     setIsLoadingAddress(true);
+
     try {
       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=1`;
       const response = await fetch(url);
@@ -146,6 +166,7 @@ export default function PickOnMapScreen() {
   const handleSearchResultSelect = (result: SearchResult) => {
     setCenter({ latitude: result.latitude, longitude: result.longitude });
     setAddress(result.address);
+    lastFetchedLocation.current = { lat: result.latitude, lng: result.longitude };
     setSearchQuery('');
     setSearchResults([]);
     setShowSearch(false);
@@ -160,7 +181,18 @@ export default function PickOnMapScreen() {
     if (!mapReady) return; // Ignore initial map load
     const [lng, lat] = feature.geometry.coordinates;
     setCenter({ latitude: lat, longitude: lng });
-    fetchAddress(lat, lng);
+
+    // Debounce address fetch - only after 1 second of no movement
+    if (addressDebounceRef.current) {
+      clearTimeout(addressDebounceRef.current);
+    }
+
+    // Show "Moving..." while dragging
+    setAddress('Moving map...');
+
+    addressDebounceRef.current = setTimeout(() => {
+      fetchAddress(lat, lng);
+    }, 1000);
   };
 
   const handleConfirm = () => {
