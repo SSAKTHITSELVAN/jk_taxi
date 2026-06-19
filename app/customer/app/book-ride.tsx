@@ -88,10 +88,18 @@ export default function BookRideScreen() {
   }, []);
 
   // Listen for location picked from map
+  const lastPickTypeRef = useRef<'pickup' | 'dropoff' | null>(null);
+
   useEffect(() => {
     if (pendingLocationPick) {
-      setPickupLocation(pendingLocationPick);
+      // Determine which field to update based on last navigation
+      if (lastPickTypeRef.current === 'dropoff') {
+        setDropoffLocation(pendingLocationPick);
+      } else {
+        setPickupLocation(pendingLocationPick);
+      }
       setPendingLocationPick(null);
+      lastPickTypeRef.current = null;
     }
   }, [pendingLocationPick]);
 
@@ -287,22 +295,45 @@ export default function BookRideScreen() {
         </View>
       </View>
 
-      {/* Pick on Map button */}
+      {/* Pick/Drop on Map buttons */}
       <View style={styles.pickOnMapContainer}>
         <TouchableOpacity
           style={styles.pickOnMapBtn}
-          onPress={() => router.push({
-            pathname: '/pick-on-map',
-            params: {
-              type: 'pickup',
-              lat: pickupLocation?.latitude.toString(),
-              lng: pickupLocation?.longitude.toString(),
-            }
-          })}
+          onPress={() => {
+            lastPickTypeRef.current = 'pickup';
+            router.push({
+              pathname: '/pick-on-map',
+              params: {
+                type: 'pickup',
+                lat: pickupLocation?.latitude.toString(),
+                lng: pickupLocation?.longitude.toString(),
+              }
+            });
+          }}
         >
           <Ionicons name="map" size={18} color={Colors.primary} />
-          <Text style={styles.pickOnMapText}>Pick on Map</Text>
+          <Text style={styles.pickOnMapText}>Pick Pickup on Map</Text>
         </TouchableOpacity>
+
+        {pickupLocation && (
+          <TouchableOpacity
+            style={[styles.pickOnMapBtn, { backgroundColor: '#FFF5F5', borderColor: '#F44336' + '30' }]}
+            onPress={() => {
+              lastPickTypeRef.current = 'dropoff';
+              router.push({
+                pathname: '/pick-on-map',
+                params: {
+                  type: 'dropoff',
+                  lat: dropoffLocation?.latitude.toString() || pickupLocation.latitude.toString(),
+                  lng: dropoffLocation?.longitude.toString() || pickupLocation.longitude.toString(),
+                }
+              });
+            }}
+          >
+            <Ionicons name="location" size={18} color="#F44336" />
+            <Text style={[styles.pickOnMapText, { color: '#F44336' }]}>Pick Drop on Map</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {!dropoffLocation && (
@@ -640,7 +671,7 @@ const styles = StyleSheet.create({
   locationInputs: { flex: 1, marginLeft: Spacing.sm },
   helperText: { fontSize: 11, color: '#999', marginTop: 4, marginLeft: 2 },
 
-  pickOnMapContainer: { paddingHorizontal: Spacing.md, marginTop: Spacing.xs },
+  pickOnMapContainer: { paddingHorizontal: Spacing.md, marginTop: Spacing.xs, gap: 8 },
   pickOnMapBtn: {
     flexDirection: 'row',
     alignItems: 'center',

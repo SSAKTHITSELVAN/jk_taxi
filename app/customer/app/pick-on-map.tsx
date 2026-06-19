@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, TextInput, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router, useLocalSearchParams } from 'expo-router';
+import * as Location from 'expo-location';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_ACCESS_TOKEN } from '../src/config/mapbox-config';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
@@ -10,20 +11,75 @@ import { useRideStore } from '../src/store/rideStore';
 
 Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
 
+interface SearchResult {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
 export default function PickOnMapScreen() {
-  const { setPendingLocationPick } = useRideStore();
+  const { setPendingLocationPick, userLocation } = useRideStore();
   const params = useLocalSearchParams<{ type: 'pickup' | 'dropoff'; lat?: string; lng?: string }>();
   const [center, setCenter] = useState({
-    latitude: params.lat ? parseFloat(params.lat) : 12.9716,
-    longitude: params.lng ? parseFloat(params.lng) : 77.5946,
+    latitude: params.lat ? parseFloat(params.lat) : (userLocation?.latitude || 12.9716),
+    longitude: params.lng ? parseFloat(params.lng) : (userLocation?.longitude || 77.5946),
   });
   const [address, setAddress] = useState('Fetching location...');
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const cameraRef = useRef<Mapbox.Camera>(null);
+  const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    fetchAddress(center.latitude, center.longitude);
+    // If no lat/lng params, try to get current location
+    if (!params.lat && !params.lng && !userLocation) {
+      getCurrentLocation();
+    } else {
+      fetchAddress(center.latitude, center.longitude);
+    }
   }, []);
+
+  useEffect(() => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+
+    if (searchQuery.length > 2) {
+      searchDebounceRef.current = setTimeout(() => {
+        searchLocation(searchQuery);
+      }, 300);
+    } else {
+      setSearchResults([]);
+    }
+
+    return () => {
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    };
+  }, [searchQuery]);
+
+  const getCurrentLocation = async () => {
+    try {
+      const { status } = await Location.getForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getLastKnownPositionAsync() || await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+        if (loc) {
+          const { latitude, longitude } = loc.coords;
+          setCenter({ latitude, longitude });
+          cameraRef.current?.setCamera({
+            centerCoordinate: [longitude, latitude],
+            zoomLevel: 15,
+            animationDuration: 1000,
+          });
+          fetchAddress(latitude, longitude);
+        }
+      }
+    } catch (error) {
+      console.log('Could not get current location:', error);
+      fetchAddress(center.latitude, center.longitude);
+    }
+  };
 
   const fetchAddress = async (lat: number, lng: number) => {
     setIsLoadingAddress(true);
@@ -41,6 +97,47 @@ export default function PickOnMapScreen() {
     } finally {
       setIsLoadingAddress(false);
     }
+  };
+
+  const searchLocation = async (query: string) => {
+    setIsSearching(true);
+    try {
+      let url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(query)}.json?access_token=${MAPBOX_ACCESS_TOKEN}&limit=5&country=IN&types=place,locality,neighborhood,address,poi`;
+      url += `&proximity=${center.longitude},${center.latitude}`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.features && data.features.length > 0) {
+        const mapped: SearchResult[] = data.features.map((feature: any) => ({
+          name: feature.text,
+          address: feature.place_name,
+          latitude: feature.center[1],
+          longitude: feature.center[0],
+        }));
+        setSearchResults(mapped);
+      } else {
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearchResultSelect = (result: SearchResult) => {
+    setCenter({ latitude: result.latitude, longitude: result.longitude });
+    setAddress(result.address);
+    setSearchQuery('');
+    setSearchResults([]);
+    setShowSearch(false);
+    cameraRef.current?.setCamera({
+      centerCoordinate: [result.longitude, result.latitude],
+      zoomLevel: 16,
+      animationDuration: 1000,
+    });
   };
 
   const handleRegionChange = async (feature: any) => {
@@ -69,8 +166,51 @@ export default function PickOnMapScreen() {
         <Text style={styles.headerTitle}>
           {params.type === 'pickup' ? 'Pick Pickup Location' : 'Pick Drop Location'}
         </Text>
-        <View style={{ width: 40 }} />
+        <TouchableOpacity onPress={() => setShowSearch(!showSearch)} style={styles.searchToggle}>
+          <Ionicons name="search" size={24} color="#000" />
+        </TouchableOpacity>
       </View>
+
+      {/* Search Bar */}
+      {showSearch && (
+        <View style={styles.searchContainer}>
+          <View style={styles.searchInputContainer}>
+            <Ionicons name="search" size={18} color="#999" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search for a location..."
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+                <Ionicons name="close-circle" size={18} color="#999" />
+              </TouchableOpacity>
+            )}
+            {isSearching && <ActivityIndicator size="small" color={Colors.primary} style={{ marginLeft: 8 }} />}
+          </View>
+
+          {searchResults.length > 0 && (
+            <ScrollView style={styles.searchResults} keyboardShouldPersistTaps="handled">
+              {searchResults.map((result, index) => (
+                <TouchableOpacity
+                  key={`${result.latitude}-${result.longitude}-${index}`}
+                  style={styles.searchResultItem}
+                  onPress={() => handleSearchResultSelect(result)}
+                >
+                  <Ionicons name="location-outline" size={18} color="#666" />
+                  <View style={styles.searchResultText}>
+                    <Text style={styles.searchResultName}>{result.name}</Text>
+                    <Text style={styles.searchResultAddress} numberOfLines={1}>{result.address}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+      )}
 
       {/* Map */}
       <View style={styles.mapContainer}>
@@ -142,6 +282,50 @@ const styles = StyleSheet.create({
     fontWeight: FontWeights.bold,
     color: '#000',
     textAlign: 'center',
+  },
+  searchToggle: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  searchContainer: {
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E0E0E0',
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    margin: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.lg,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: FontSizes.md,
+    color: '#000',
+  },
+  searchResults: {
+    maxHeight: 250,
+    backgroundColor: '#FFF',
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
+    gap: 12,
+  },
+  searchResultText: { flex: 1 },
+  searchResultName: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+    color: '#000',
+    marginBottom: 2,
+  },
+  searchResultAddress: {
+    fontSize: FontSizes.sm,
+    color: '#666',
   },
   mapContainer: { flex: 1, position: 'relative' },
   map: { flex: 1 },
