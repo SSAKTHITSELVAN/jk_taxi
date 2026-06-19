@@ -250,15 +250,6 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
         {isSearching && (
           <ActivityIndicator size="small" color={Colors.primary} style={{ marginRight: 4 }} />
         )}
-        {showCurrentLocation && query.length === 0 && (
-          <TouchableOpacity onPress={handleUseCurrentLocation} disabled={loadingLocation}>
-            {loadingLocation ? (
-              <ActivityIndicator size="small" color={Colors.primary} />
-            ) : (
-              <Ionicons name="navigate-circle" size={24} color={Colors.primary} />
-            )}
-          </TouchableOpacity>
-        )}
         {query.length > 0 && (
           <TouchableOpacity onPress={() => {
             setQuery('');
@@ -269,6 +260,22 @@ export const LocationSearchInput = forwardRef<LocationSearchInputRef, LocationSe
           </TouchableOpacity>
         )}
       </View>
+
+      {/* GPS button below input */}
+      {showCurrentLocation && (
+        <TouchableOpacity
+          style={styles.gpsButton}
+          onPress={handleUseCurrentLocation}
+          disabled={loadingLocation}
+        >
+          {loadingLocation ? (
+            <ActivityIndicator size="small" color={Colors.primary} />
+          ) : (
+            <Ionicons name="navigate-circle" size={20} color={Colors.primary} />
+          )}
+          <Text style={styles.gpsButtonText}>Use current location</Text>
+        </TouchableOpacity>
+      )}
 
       {showResults && (
         <View style={styles.resultsContainer}>
@@ -335,6 +342,22 @@ const styles = StyleSheet.create({
     fontSize: FontSizes.md,
     color: '#000000',
     paddingVertical: Spacing.xs,
+    fontWeight: FontWeights.medium,
+  },
+  gpsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F5FF',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.md,
+    marginTop: 8,
+    gap: 6,
+  },
+  gpsButtonText: {
+    fontSize: FontSizes.sm,
+    color: Colors.primary,
     fontWeight: FontWeights.medium,
   },
   resultsContainer: {
