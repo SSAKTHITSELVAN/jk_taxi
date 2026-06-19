@@ -179,29 +179,58 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
           {/* PENDING STATE */}
           {ride.status === 'pending' && (
             <View style={styles.pendingContainer}>
-              <Animated.View style={[styles.pulseCircle, {
-                opacity: searchPulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
-                transform: [{ scale: searchPulse.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.05] }) }],
-              }]}>
-                <Ionicons name="car" size={28} color={Colors.primary} />
-              </Animated.View>
+              {nearbyCount > 0 ? (
+                <>
+                  <Animated.View style={[styles.pulseCircle, {
+                    opacity: searchPulse.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1] }),
+                    transform: [{ scale: searchPulse.interpolate({ inputRange: [0, 1], outputRange: [0.95, 1.05] }) }],
+                  }]}>
+                    <Ionicons name="car" size={28} color={Colors.primary} />
+                  </Animated.View>
 
-              <View style={styles.liveStats}>
-                <View style={styles.statBox}>
-                  <Text style={styles.statNumber}>{nearbyCount}</Text>
-                  <Text style={styles.statLabel}>Nearby</Text>
+                  <View style={styles.liveStats}>
+                    <View style={styles.statBox}>
+                      <Text style={styles.statNumber}>{nearbyCount}</Text>
+                      <Text style={styles.statLabel}>Nearby</Text>
+                    </View>
+                    <View style={styles.statDivider} />
+                    <View style={styles.statBox}>
+                      <Text style={styles.statNumber}>{ride.rejection_count || 0}</Text>
+                      <Text style={styles.statLabel}>Passed</Text>
+                    </View>
+                    <View style={styles.statDivider} />
+                    <View style={styles.statBox}>
+                      <Text style={[styles.statNumber, { color: '#F59E0B' }]}>Searching</Text>
+                      <Text style={styles.statLabel}>Status</Text>
+                    </View>
+                  </View>
+                </>
+              ) : (
+                <View style={styles.noDriversContainer}>
+                  <Ionicons name="car-outline" size={32} color="#999" />
+                  <Text style={styles.noDriversTitle}>No captains nearby</Text>
+                  <Text style={styles.noDriversSubtext}>
+                    Still searching... or contact our help desk for assistance
+                  </Text>
+
+                  <View style={styles.helpDeskContainer}>
+                    <TouchableOpacity style={styles.helpCallRow} onPress={() => Linking.openURL('tel:9677895027')}>
+                      <View style={styles.helpCallIcon}>
+                        <Ionicons name="call" size={16} color="#FFF" />
+                      </View>
+                      <Text style={styles.helpCallNumber}>9677 895 027</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#CCC" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.helpCallRow} onPress={() => Linking.openURL('tel:9677885027')}>
+                      <View style={styles.helpCallIcon}>
+                        <Ionicons name="call" size={16} color="#FFF" />
+                      </View>
+                      <Text style={styles.helpCallNumber}>9677 885 027</Text>
+                      <Ionicons name="chevron-forward" size={16} color="#CCC" />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={styles.statNumber}>{ride.rejection_count || 0}</Text>
-                  <Text style={styles.statLabel}>Passed</Text>
-                </View>
-                <View style={styles.statDivider} />
-                <View style={styles.statBox}>
-                  <Text style={[styles.statNumber, { color: '#F59E0B' }]}>Searching</Text>
-                  <Text style={styles.statLabel}>Status</Text>
-                </View>
-              </View>
+              )}
             </View>
           )}
 
@@ -343,6 +372,15 @@ const styles = StyleSheet.create({
   statNumber: { fontSize: FontSizes.lg, fontWeight: FontWeights.bold, color: Colors.primary },
   statLabel: { fontSize: FontSizes.xs, color: '#666', marginTop: 2 },
   statDivider: { width: 1, backgroundColor: '#E0E0E0', marginHorizontal: 8 },
+
+  // No drivers / help desk
+  noDriversContainer: { alignItems: 'center', paddingVertical: Spacing.sm },
+  noDriversTitle: { fontSize: FontSizes.md, fontWeight: FontWeights.bold, color: '#333', marginTop: Spacing.sm },
+  noDriversSubtext: { fontSize: FontSizes.sm, color: '#666', textAlign: 'center', marginTop: 4, marginBottom: Spacing.md },
+  helpDeskContainer: { width: '100%', backgroundColor: '#F8F9FA', borderRadius: 12, padding: Spacing.sm },
+  helpCallRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: Spacing.sm, paddingHorizontal: Spacing.sm, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
+  helpCallIcon: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginRight: Spacing.md },
+  helpCallNumber: { flex: 1, fontSize: FontSizes.md, fontWeight: FontWeights.semibold, color: '#000' },
 
   // Driver
   driverSection: { marginBottom: Spacing.sm },

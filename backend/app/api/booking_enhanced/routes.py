@@ -189,12 +189,15 @@ def enrich_ride_with_driver(ride: RideEnhanced, db: Session) -> dict:
     return ride_dict
 
 
+RIDE_TIMEOUT_MINUTES = 5  # Auto-cancel pending rides after 5 minutes
+
+
 @router.get("/active", response_model=RideEnhancedResponse)
 async def get_active_booking(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's active ride"""
+    """Get user's active ride (auto-cancels if pending too long)"""
     active_ride = db.query(RideEnhanced).filter(
         RideEnhanced.user_id == current_user.id,
         RideEnhanced.status.in_(["pending", "accepted", "started"])
@@ -205,6 +208,18 @@ async def get_active_booking(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No active ride found"
         )
+
+    # Auto-cancel if pending for too long
+    if active_ride.status == "pending" and active_ride.created_at:
+        elapsed = datetime.now(active_ride.created_at.tzinfo) - active_ride.created_at
+        if elapsed.total_seconds() > RIDE_TIMEOUT_MINUTES * 60:
+            active_ride.status = "cancelled"
+            db.commit()
+            db.refresh(active_ride)
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Ride auto-cancelled: no captain available within 5 minutes"
+            )
 
     return enrich_ride_with_driver(active_ride, db)
 
