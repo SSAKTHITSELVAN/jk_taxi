@@ -280,11 +280,7 @@ async def get_nearby_drivers_count(
     ).all()
 
     if not active_ride or not online_drivers:
-        total_online = db.query(Driver).filter(
-            Driver.is_online == True,
-            Driver.is_active == True
-        ).count()
-        return {"nearby_count": total_online}
+        return {"nearby_count": 0}
 
     radius = 0.1
     nearby = 0
