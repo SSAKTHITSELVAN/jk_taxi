@@ -100,6 +100,9 @@ class RideEnhanced(Base):
     payment_method = Column(String(50), default="cash")
     transaction_id = Column(String(100), nullable=True)
 
+    # Cancellation
+    cancellation_reason = Column(String(255), nullable=True)
+
     # Distance (in km)
     distance_km = Column(Float, default=0.0)
 

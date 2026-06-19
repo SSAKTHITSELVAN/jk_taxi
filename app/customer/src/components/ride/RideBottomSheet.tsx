@@ -11,6 +11,8 @@ import {
   Dimensions,
   Platform,
   PanResponder,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { EnhancedRide } from '../../types/enhanced';
@@ -27,10 +29,21 @@ interface RideBottomSheetProps {
   liveEta?: { distance: number; duration: number } | null;
 }
 
+const CANCEL_REASONS = [
+  'Driver is taking too long',
+  'Found another ride',
+  'Changed my plans',
+  'Booked by mistake',
+  'Driver asked to cancel',
+];
+
 export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideComplete, liveEta }) => {
   const [nearbyCount, setNearbyCount] = useState(0);
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [selectedCancelReason, setSelectedCancelReason] = useState<string | null>(null);
+  const [customCancelReason, setCustomCancelReason] = useState('');
 
   const initialHeight = ride.status === 'pending' ? 320 : MIN_HEIGHT;
   const sheetHeight = useRef(new Animated.Value(initialHeight)).current;
@@ -94,21 +107,27 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
   };
 
   const handleCancel = () => {
-    Alert.alert('Cancel Ride', 'Are you sure you want to cancel?', [
-      { text: 'No', style: 'cancel' },
-      {
-        text: 'Yes, Cancel', style: 'destructive',
-        onPress: async () => {
-          try {
-            await bookingEnhancedApi.cancelRide(ride.id);
-            Alert.alert('Cancelled', 'Your ride has been cancelled.');
-            onRideComplete();
-          } catch (e: any) {
-            Alert.alert('Failed', e.response?.data?.detail || 'Could not cancel ride.');
-          }
-        },
-      },
-    ]);
+    setShowCancelModal(true);
+    setSelectedCancelReason(null);
+    setCustomCancelReason('');
+  };
+
+  const submitCancellation = async () => {
+    const reason = selectedCancelReason === 'Other'
+      ? customCancelReason.trim()
+      : selectedCancelReason;
+    if (!reason) {
+      Alert.alert('Select a reason', 'Please select why you want to cancel.');
+      return;
+    }
+    try {
+      await bookingEnhancedApi.cancelRide(ride.id, reason);
+      setShowCancelModal(false);
+      Alert.alert('Cancelled', 'Your ride has been cancelled.');
+      onRideComplete();
+    } catch (e: any) {
+      Alert.alert('Failed', e.response?.data?.detail || 'Could not cancel ride.');
+    }
   };
 
   const handleCallDriver = () => {
@@ -348,6 +367,62 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
           )}
         </View>
       </ScrollView>
+
+      {/* Cancel Reason Modal */}
+      <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
+        <View style={styles.cancelModalOverlay}>
+          <View style={styles.cancelModalContent}>
+            <Text style={styles.cancelModalTitle}>Why are you cancelling?</Text>
+
+            {CANCEL_REASONS.map((reason) => (
+              <TouchableOpacity
+                key={reason}
+                style={[styles.cancelReasonOption, selectedCancelReason === reason && styles.cancelReasonSelected]}
+                onPress={() => setSelectedCancelReason(reason)}
+              >
+                <Ionicons
+                  name={selectedCancelReason === reason ? 'radio-button-on' : 'radio-button-off'}
+                  size={20}
+                  color={selectedCancelReason === reason ? Colors.primary : '#999'}
+                />
+                <Text style={[styles.cancelReasonText, selectedCancelReason === reason && { color: Colors.primary }]}>{reason}</Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              style={[styles.cancelReasonOption, selectedCancelReason === 'Other' && styles.cancelReasonSelected]}
+              onPress={() => setSelectedCancelReason('Other')}
+            >
+              <Ionicons
+                name={selectedCancelReason === 'Other' ? 'radio-button-on' : 'radio-button-off'}
+                size={20}
+                color={selectedCancelReason === 'Other' ? Colors.primary : '#999'}
+              />
+              <Text style={[styles.cancelReasonText, selectedCancelReason === 'Other' && { color: Colors.primary }]}>Other</Text>
+            </TouchableOpacity>
+
+            {selectedCancelReason === 'Other' && (
+              <TextInput
+                style={styles.cancelReasonInput}
+                placeholder="Type your reason..."
+                placeholderTextColor="#999"
+                value={customCancelReason}
+                onChangeText={setCustomCancelReason}
+                multiline
+              />
+            )}
+
+            <View style={styles.cancelModalActions}>
+              <TouchableOpacity style={styles.cancelModalBack} onPress={() => setShowCancelModal(false)}>
+                <Text style={styles.cancelModalBackText}>Go Back</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.cancelModalConfirm} onPress={submitCancellation}>
+                <Text style={styles.cancelModalConfirmText}>Cancel Ride</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </Animated.View>
   );
 };
@@ -435,4 +510,18 @@ const styles = StyleSheet.create({
   sosBtnText: { color: '#FFF', fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
   cancelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEE2E2', paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#EF4444', gap: 6 },
   cancelBtnText: { color: '#EF4444', fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
+
+  // Cancel Modal
+  cancelModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', alignItems: 'center', padding: Spacing.lg },
+  cancelModalContent: { backgroundColor: '#FFF', borderRadius: 16, padding: Spacing.lg, width: '100%', maxHeight: '80%' },
+  cancelModalTitle: { fontSize: FontSizes.lg, fontWeight: FontWeights.bold, color: '#000', marginBottom: Spacing.md, textAlign: 'center' },
+  cancelReasonOption: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: Spacing.sm, borderRadius: 10, marginBottom: 6, gap: 10 },
+  cancelReasonSelected: { backgroundColor: '#F3E8FF' },
+  cancelReasonText: { fontSize: FontSizes.md, color: '#333', flex: 1 },
+  cancelReasonInput: { backgroundColor: '#F5F5F5', borderRadius: 10, padding: Spacing.md, fontSize: FontSizes.md, color: '#000', minHeight: 60, textAlignVertical: 'top', marginTop: 4, marginBottom: 8, borderWidth: 1, borderColor: '#E0E0E0' },
+  cancelModalActions: { flexDirection: 'row', gap: 10, marginTop: Spacing.md },
+  cancelModalBack: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#F5F5F5', alignItems: 'center' },
+  cancelModalBackText: { fontSize: FontSizes.md, fontWeight: FontWeights.semibold, color: '#666' },
+  cancelModalConfirm: { flex: 1, paddingVertical: 12, borderRadius: 10, backgroundColor: '#EF4444', alignItems: 'center' },
+  cancelModalConfirmText: { fontSize: FontSizes.md, fontWeight: FontWeights.bold, color: '#FFF' },
 });

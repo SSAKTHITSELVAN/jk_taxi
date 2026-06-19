@@ -158,6 +158,7 @@ class RideEnhancedResponse(BaseModel):
     # Status & Tracking
     status: str
     rejection_count: int = 0
+    cancellation_reason: Optional[str] = None
 
     # Fare
     base_fare: float

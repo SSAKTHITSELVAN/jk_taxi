@@ -266,6 +266,9 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 
   return (
     <View style={styles.container}>
+      {/* Status bar area - not touchable */}
+      <View style={[styles.statusBarSpacer, { height: insets.top }]} />
+
       {/* Map: tracking view or normal */}
       {isTrackingRide ? (
         <RideTrackingMap
@@ -626,6 +629,11 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#000',
+  },
+  statusBarSpacer: {
+    backgroundColor: '#000',
+    zIndex: 1000,
   },
   map: {
     flex: 1,

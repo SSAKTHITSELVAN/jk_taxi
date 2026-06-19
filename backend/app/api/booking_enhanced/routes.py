@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -214,6 +214,7 @@ async def get_active_booking(
         elapsed = datetime.now(active_ride.created_at.tzinfo) - active_ride.created_at
         if elapsed.total_seconds() > RIDE_TIMEOUT_MINUTES * 60:
             active_ride.status = "cancelled"
+            active_ride.cancellation_reason = "Auto-cancelled: no captain available within 5 minutes"
             db.commit()
             db.refresh(active_ride)
             raise HTTPException(
@@ -317,6 +318,7 @@ async def get_booking(
 @router.put("/{ride_id}/cancel", response_model=RideEnhancedResponse)
 async def cancel_booking(
     ride_id: UUID,
+    reason: str = Query(default=None, description="Cancellation reason"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -345,6 +347,7 @@ async def cancel_booking(
         )
 
     ride.status = "cancelled"
+    ride.cancellation_reason = reason or None
     db.commit()
     db.refresh(ride)
 

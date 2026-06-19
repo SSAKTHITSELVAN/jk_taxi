@@ -51,7 +51,7 @@ export default function RootLayout() {
         <Stack.Screen name="edit-profile" />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
-      <StatusBar style="dark" translucent={true} />
+      <StatusBar style="light" translucent={true} />
     </ThemeProvider>
   );
 }

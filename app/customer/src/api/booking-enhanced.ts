@@ -51,8 +51,9 @@ export const bookingEnhancedApi = {
   },
 
   // Cancel ride
-  cancelRide: async (rideId: string): Promise<EnhancedRide> => {
-    const response = await apiClient.put<EnhancedRide>(`/api/v2/bookings/${rideId}/cancel`);
+  cancelRide: async (rideId: string, reason?: string): Promise<EnhancedRide> => {
+    const params = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+    const response = await apiClient.put<EnhancedRide>(`/api/v2/bookings/${rideId}/cancel${params}`);
     return response.data;
   },
 
