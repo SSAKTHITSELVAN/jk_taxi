@@ -261,6 +261,42 @@ async def get_active_ride_tracking(
     }
 
 
+@router.get("/nearby-drivers")
+async def get_nearby_drivers_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get count of online drivers nearby (within ~10km of user's active ride pickup)"""
+    active_ride = db.query(RideEnhanced).filter(
+        RideEnhanced.user_id == current_user.id,
+        RideEnhanced.status == "pending"
+    ).first()
+
+    online_drivers = db.query(Driver).filter(
+        Driver.is_online == True,
+        Driver.is_active == True,
+        Driver.current_lat.isnot(None),
+        Driver.current_lng.isnot(None),
+    ).all()
+
+    if not active_ride or not online_drivers:
+        total_online = db.query(Driver).filter(
+            Driver.is_online == True,
+            Driver.is_active == True
+        ).count()
+        return {"nearby_count": total_online}
+
+    radius = 0.1
+    nearby = 0
+    for d in online_drivers:
+        lat_diff = abs(d.current_lat - active_ride.pickup_lat)
+        lng_diff = abs(d.current_lng - active_ride.pickup_lng)
+        if lat_diff <= radius and lng_diff <= radius:
+            nearby += 1
+
+    return {"nearby_count": nearby}
+
+
 @router.get("/{ride_id}", response_model=RideEnhancedResponse)
 async def get_booking(
     ride_id: UUID,
@@ -317,46 +353,6 @@ async def cancel_booking(
     db.refresh(ride)
 
     return ride
-
-
-@router.get("/nearby-drivers")
-async def get_nearby_drivers_count(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get count of online drivers nearby (within ~10km of user's active ride pickup)"""
-    # Find user's active/pending ride to get pickup location
-    active_ride = db.query(RideEnhanced).filter(
-        RideEnhanced.user_id == current_user.id,
-        RideEnhanced.status == "pending"
-    ).first()
-
-    online_drivers = db.query(Driver).filter(
-        Driver.is_online == True,
-        Driver.is_active == True,
-        Driver.current_lat.isnot(None),
-        Driver.current_lng.isnot(None),
-    ).all()
-
-    if not active_ride or not online_drivers:
-        # Fallback: just count all online drivers
-        total_online = db.query(Driver).filter(
-            Driver.is_online == True,
-            Driver.is_active == True
-        ).count()
-        return {"nearby_count": total_online}
-
-    # Filter by approximate distance (~10km radius)
-    # 0.1 degree ≈ 11km at equator
-    radius = 0.1
-    nearby = 0
-    for d in online_drivers:
-        lat_diff = abs(d.current_lat - active_ride.pickup_lat)
-        lng_diff = abs(d.current_lng - active_ride.pickup_lng)
-        if lat_diff <= radius and lng_diff <= radius:
-            nearby += 1
-
-    return {"nearby_count": nearby}
 
 
 @router.get("/history/all", response_model=List[RideEnhancedResponse])
