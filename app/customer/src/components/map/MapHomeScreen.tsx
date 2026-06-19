@@ -236,7 +236,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const isTrackingRide = activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Map: tracking view or normal */}
       {isTrackingRide ? (
         <RideTrackingMap
@@ -257,7 +257,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       )}
 
       {/* Floating Location Card */}
-      <View style={[styles.floatingLocationCard, { top: insets.top + 12 }]}>
+      <View style={[styles.floatingLocationCard, { top: 12 }]}>
         <TouchableOpacity style={styles.menuButton} onPress={toggleMenu}>
           <Ionicons name="menu" size={24} color="#000000" />
         </TouchableOpacity>
@@ -590,6 +590,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   map: {
     flex: 1,
