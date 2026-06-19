@@ -94,6 +94,11 @@ export interface EnhancedRide {
   transaction_id?: string;
   distance_km: number;
   eta_minutes: number;
+  driver_name?: string;
+  driver_phone?: string;
+  driver_vehicle_number?: string;
+  driver_vehicle_type?: string;
+  rejection_count?: number;
   created_at: string;
   updated_at: string;
 }

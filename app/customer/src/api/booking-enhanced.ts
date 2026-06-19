@@ -60,7 +60,13 @@ export const bookingEnhancedApi = {
   getRideHistory: async (): Promise<EnhancedRide[]> => {
     const response = await apiClient.get<EnhancedRide[]>('/api/v2/bookings/history/all');
     return response.data;
-  }
+  },
+
+  // Get nearby drivers count
+  getNearbyDrivers: async (): Promise<{ nearby_count: number }> => {
+    const response = await apiClient.get<{ nearby_count: number }>('/api/v2/bookings/nearby-drivers');
+    return response.data;
+  },
 };
 
 export const userEnhancedApi = {

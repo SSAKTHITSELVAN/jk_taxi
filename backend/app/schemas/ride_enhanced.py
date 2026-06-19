@@ -178,6 +178,12 @@ class RideEnhancedResponse(BaseModel):
     distance_km: float
     eta_minutes: int
 
+    # Driver info (populated when driver accepts)
+    driver_name: Optional[str] = None
+    driver_phone: Optional[str] = None
+    driver_vehicle_number: Optional[str] = None
+    driver_vehicle_type: Optional[str] = None
+
     created_at: datetime
     updated_at: datetime
 

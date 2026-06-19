@@ -11,6 +11,7 @@ from app.schemas.ride_enhanced import (
 from app.models.ride_enhanced import RideEnhanced
 from app.models.vehicle_category import VehicleCategoryConfig
 from app.models.user import User
+from app.models.driver import Driver
 
 router = APIRouter()
 
@@ -169,6 +170,25 @@ async def create_booking_enhanced(
     return new_ride
 
 
+def enrich_ride_with_driver(ride: RideEnhanced, db: Session) -> dict:
+    """Add driver details to ride response"""
+    ride_dict = {c.name: getattr(ride, c.name) for c in ride.__table__.columns}
+    ride_dict['driver_name'] = None
+    ride_dict['driver_phone'] = None
+    ride_dict['driver_vehicle_number'] = None
+    ride_dict['driver_vehicle_type'] = None
+
+    if ride.driver_id:
+        driver = db.query(Driver).filter(Driver.id == ride.driver_id).first()
+        if driver:
+            ride_dict['driver_name'] = driver.name
+            ride_dict['driver_phone'] = driver.phone
+            ride_dict['driver_vehicle_number'] = driver.vehicle_number
+            ride_dict['driver_vehicle_type'] = driver.vehicle_type
+
+    return ride_dict
+
+
 @router.get("/active", response_model=RideEnhancedResponse)
 async def get_active_booking(
     current_user: User = Depends(get_current_user),
@@ -186,7 +206,7 @@ async def get_active_booking(
             detail="No active ride found"
         )
 
-    return active_ride
+    return enrich_ride_with_driver(active_ride, db)
 
 
 @router.get("/{ride_id}", response_model=RideEnhancedResponse)
@@ -245,6 +265,19 @@ async def cancel_booking(
     db.refresh(ride)
 
     return ride
+
+
+@router.get("/nearby-drivers")
+async def get_nearby_drivers_count(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get count of online drivers nearby"""
+    online_count = db.query(Driver).filter(
+        Driver.is_online == True,
+        Driver.is_active == True
+    ).count()
+    return {"nearby_count": online_count}
 
 
 @router.get("/history/all", response_model=List[RideEnhancedResponse])
