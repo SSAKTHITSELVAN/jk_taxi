@@ -60,6 +60,9 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const searchInputRef = useRef<TextInput>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [floatingBarActive, setFloatingBarActive] = useState(false);
+  const floatingBarOpacity = useRef(new Animated.Value(0.45)).current;
+
   const menuSlideAnim = useRef(new Animated.Value(-320)).current;
 
   useEffect(() => {
@@ -214,8 +217,33 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
     setSearchResults([]);
   };
 
+  const floatingBarTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const activateFloatingBar = () => {
+    if (floatingBarActive) return;
+    setFloatingBarActive(true);
+    Animated.timing(floatingBarOpacity, {
+      toValue: 1,
+      duration: 200,
+      useNativeDriver: true,
+    }).start();
+    if (floatingBarTimeout.current) clearTimeout(floatingBarTimeout.current);
+    floatingBarTimeout.current = setTimeout(() => {
+      deactivateFloatingBar();
+    }, 4000);
+  };
+
+  const deactivateFloatingBar = () => {
+    setFloatingBarActive(false);
+    Animated.timing(floatingBarOpacity, {
+      toValue: 0.45,
+      duration: 300,
+      useNativeDriver: true,
+    }).start();
+  };
+
   const toggleMenu = () => {
-    const toValue = menuOpen ? -320 : 0; // Fully hide at -320
+    const toValue = menuOpen ? -320 : 0;
     Animated.spring(menuSlideAnim, {
       toValue,
       useNativeDriver: true,
@@ -223,6 +251,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       friction: 11,
     }).start();
     setMenuOpen(!menuOpen);
+    if (!menuOpen) activateFloatingBar();
   };
 
   const handleRideComplete = async () => {
@@ -237,9 +266,6 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 
   return (
     <View style={styles.container}>
-      {/* Status bar spacer */}
-      <View style={{ height: insets.top, backgroundColor: '#FFFFFF' }} />
-
       {/* Map: tracking view or normal */}
       {isTrackingRide ? (
         <RideTrackingMap
@@ -259,40 +285,47 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
         />
       )}
 
-      {/* Floating Location Card - rendered after map to stay on top */}
-      <View style={[styles.floatingLocationCard, { top: insets.top + 12 }]}>
-        <TouchableOpacity style={styles.menuButton} onPress={toggleMenu}>
-          <Ionicons name="menu" size={24} color="#000000" />
-        </TouchableOpacity>
+      {/* Floating Location Card - transparent until tapped */}
+      <TouchableOpacity
+        activeOpacity={1}
+        onPress={activateFloatingBar}
+        style={[styles.floatingLocationCard, { top: insets.top + 12 }]}
+      >
+        <Animated.View style={[styles.floatingBarInner, { opacity: floatingBarOpacity }]}>
+          <TouchableOpacity style={styles.menuButton} onPress={() => { activateFloatingBar(); toggleMenu(); }} disabled={!floatingBarActive}>
+            <Ionicons name="menu" size={24} color="#000000" />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.locationInfo}
-          onPress={() => setShowLocationSearch(true)}
-          activeOpacity={0.7}
-        >
-          {isLoadingLocation ? (
-            <ActivityIndicator size="small" color={Colors.primary} />
-          ) : (
-            <Ionicons name="location" size={16} color={Colors.primary} />
-          )}
-          <Text style={styles.locationText} numberOfLines={1}>
-            {locationName}
-          </Text>
-          <Ionicons name="pencil" size={14} color="#999" style={{ marginLeft: 4 }} />
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.locationInfo}
+            onPress={() => { activateFloatingBar(); setShowLocationSearch(true); }}
+            activeOpacity={0.7}
+            disabled={!floatingBarActive}
+          >
+            {isLoadingLocation ? (
+              <ActivityIndicator size="small" color={Colors.primary} />
+            ) : (
+              <Ionicons name="location" size={16} color={Colors.primary} />
+            )}
+            <Text style={styles.locationText} numberOfLines={1}>
+              {locationName}
+            </Text>
+            <Ionicons name="pencil" size={14} color="#999" style={{ marginLeft: 4 }} />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.notificationButton}
-          onPress={getUserLocation}
-          disabled={isLoadingLocation}
-        >
-          <Ionicons
-            name={isLoadingLocation ? "refresh" : "navigate-circle-outline"}
-            size={22}
-            color={Colors.primary}
-          />
-        </TouchableOpacity>
-      </View>
+          <TouchableOpacity
+            style={styles.notificationButton}
+            onPress={() => { activateFloatingBar(); getUserLocation(); }}
+            disabled={!floatingBarActive || isLoadingLocation}
+          >
+            <Ionicons
+              name={isLoadingLocation ? "refresh" : "navigate-circle-outline"}
+              size={22}
+              color={Colors.primary}
+            />
+          </TouchableOpacity>
+        </Animated.View>
+      </TouchableOpacity>
 
       {/* Side Menu Drawer */}
       <Animated.View
@@ -602,6 +635,11 @@ const styles = StyleSheet.create({
     top: 12,
     left: Spacing.md,
     right: Spacing.md,
+    borderRadius: BorderRadius.xl,
+    elevation: 999,
+    zIndex: 999,
+  },
+  floatingBarInner: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -613,7 +651,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 8,
     elevation: 999,
-    zIndex: 999,
   },
   menuButton: {
     width: 40,
