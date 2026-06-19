@@ -21,25 +21,41 @@ interface SearchResult {
 export default function PickOnMapScreen() {
   const { setPendingLocationPick, userLocation } = useRideStore();
   const params = useLocalSearchParams<{ type: 'pickup' | 'dropoff'; lat?: string; lng?: string }>();
-  const [center, setCenter] = useState({
-    latitude: params.lat ? parseFloat(params.lat) : (userLocation?.latitude || 12.9716),
-    longitude: params.lng ? parseFloat(params.lng) : (userLocation?.longitude || 77.5946),
-  });
+
+  const getInitialCenter = () => {
+    if (params.lat && params.lng) {
+      return {
+        latitude: parseFloat(params.lat),
+        longitude: parseFloat(params.lng),
+      };
+    }
+    if (userLocation) {
+      return {
+        latitude: userLocation.latitude,
+        longitude: userLocation.longitude,
+      };
+    }
+    return null; // Will fetch current location
+  };
+
+  const [center, setCenter] = useState(getInitialCenter() || { latitude: 12.9716, longitude: 77.5946 });
   const [address, setAddress] = useState('Fetching location...');
   const [isLoadingAddress, setIsLoadingAddress] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const cameraRef = useRef<Mapbox.Camera>(null);
   const searchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const initialCenter = useRef(getInitialCenter());
 
   useEffect(() => {
-    // If no lat/lng params, try to get current location
-    if (!params.lat && !params.lng && !userLocation) {
+    // If no initial location, get current location
+    if (!initialCenter.current) {
       getCurrentLocation();
     } else {
-      fetchAddress(center.latitude, center.longitude);
+      fetchAddress(initialCenter.current.latitude, initialCenter.current.longitude);
     }
   }, []);
 
@@ -141,6 +157,7 @@ export default function PickOnMapScreen() {
   };
 
   const handleRegionChange = async (feature: any) => {
+    if (!mapReady) return; // Ignore initial map load
     const [lng, lat] = feature.geometry.coordinates;
     setCenter({ latitude: lat, longitude: lng });
     fetchAddress(lat, lng);
@@ -218,13 +235,13 @@ export default function PickOnMapScreen() {
           style={styles.map}
           styleURL="mapbox://styles/mapbox/streets-v12"
           onRegionDidChange={handleRegionChange}
+          onDidFinishLoadingMap={() => setMapReady(true)}
         >
           <Mapbox.Camera
             ref={cameraRef}
             zoomLevel={15}
             centerCoordinate={[center.longitude, center.latitude]}
-            animationMode="flyTo"
-            animationDuration={1000}
+            animationMode="none"
           />
           <Mapbox.UserLocation visible showsUserHeadingIndicator />
         </Mapbox.MapView>
