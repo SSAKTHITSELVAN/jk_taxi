@@ -3,6 +3,13 @@ import { Ride, CreateRideData } from '../types';
 import { ridesApi } from '../api/rides';
 import { bookingEnhancedApi } from '../api/booking-enhanced';
 
+interface UserLocation {
+  latitude: number;
+  longitude: number;
+  name: string;
+  address: string;
+}
+
 interface RideState {
   activeRide: Ride | null;
   rideHistory: Ride[];
@@ -11,7 +18,11 @@ interface RideState {
   driverLocation: { latitude: number; longitude: number } | null;
   trackingInterval: ReturnType<typeof setInterval> | null;
   pollCount: number;
+  userLocation: UserLocation | null;
+  pendingLocationPick: UserLocation | null;
 
+  setUserLocation: (loc: UserLocation) => void;
+  setPendingLocationPick: (loc: UserLocation | null) => void;
   createRide: (data: CreateRideData) => Promise<Ride>;
   getActiveRide: () => Promise<void>;
   cancelRide: (rideId: string) => Promise<void>;
@@ -30,6 +41,11 @@ export const useRideStore = create<RideState>((set, get) => ({
   driverLocation: null,
   trackingInterval: null,
   pollCount: 0,
+  userLocation: null,
+  pendingLocationPick: null,
+
+  setUserLocation: (loc) => set({ userLocation: loc }),
+  setPendingLocationPick: (loc) => set({ pendingLocationPick: loc }),
 
   createRide: async (data: CreateRideData) => {
     try {

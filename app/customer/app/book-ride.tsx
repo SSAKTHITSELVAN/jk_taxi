@@ -39,7 +39,7 @@ const VEHICLE_OPTIONS = [
 ];
 
 export default function BookRideScreen() {
-  const { getActiveRide } = useRideStore();
+  const { getActiveRide, userLocation, pendingLocationPick, setPendingLocationPick } = useRideStore();
   const insets = useSafeAreaInsets();
 
   // Locations
@@ -78,9 +78,22 @@ export default function BookRideScreen() {
   const step = !pickupLocation || !dropoffLocation ? 'locations' : 'vehicle';
 
   useEffect(() => {
-    autoFetchPickup();
+    // Use stored location from home screen if available
+    if (userLocation) {
+      setPickupLocation(userLocation);
+    } else {
+      autoFetchPickup();
+    }
     fetchRecentLocations();
   }, []);
+
+  // Listen for location picked from map
+  useEffect(() => {
+    if (pendingLocationPick) {
+      setPickupLocation(pendingLocationPick);
+      setPendingLocationPick(null);
+    }
+  }, [pendingLocationPick]);
 
   useEffect(() => {
     if (pickupLocation && dropoffLocation) {
@@ -258,6 +271,11 @@ export default function BookRideScreen() {
             onFocusNext={() => dropoffInputRef.current?.focus()}
             showCurrentLocation={true}
           />
+          {pickupLocation && (
+            <Text style={styles.helperText}>
+              <Ionicons name="information-circle-outline" size={12} color="#999" /> Tap GPS icon to refresh location
+            </Text>
+          )}
           <View style={{ height: 12 }} />
           <LocationSearchInput
             ref={dropoffInputRef}
@@ -267,6 +285,24 @@ export default function BookRideScreen() {
             initialValue={dropoffLocation?.address}
           />
         </View>
+      </View>
+
+      {/* Pick on Map button */}
+      <View style={styles.pickOnMapContainer}>
+        <TouchableOpacity
+          style={styles.pickOnMapBtn}
+          onPress={() => router.push({
+            pathname: '/pick-on-map',
+            params: {
+              type: 'pickup',
+              lat: pickupLocation?.latitude.toString(),
+              lng: pickupLocation?.longitude.toString(),
+            }
+          })}
+        >
+          <Ionicons name="map" size={18} color={Colors.primary} />
+          <Text style={styles.pickOnMapText}>Pick on Map</Text>
+        </TouchableOpacity>
       </View>
 
       {!dropoffLocation && (
@@ -602,6 +638,26 @@ const styles = StyleSheet.create({
   dashedLine: { width: 2, flex: 1, minHeight: 30, backgroundColor: '#E0E0E0', marginVertical: 6 },
   dropoffDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#F44336' },
   locationInputs: { flex: 1, marginLeft: Spacing.sm },
+  helperText: { fontSize: 11, color: '#999', marginTop: 4, marginLeft: 2 },
+
+  pickOnMapContainer: { paddingHorizontal: Spacing.md, marginTop: Spacing.xs },
+  pickOnMapBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F0F5FF',
+    paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    borderColor: Colors.primary + '30',
+    gap: 6,
+  },
+  pickOnMapText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    color: Colors.primary,
+  },
 
   suggestedSection: { marginHorizontal: Spacing.md, marginTop: Spacing.sm, backgroundColor: '#FFF', borderRadius: BorderRadius.lg, padding: Spacing.md },
   suggestedTitle: { fontSize: FontSizes.xs, fontWeight: FontWeights.semibold, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: Spacing.sm },

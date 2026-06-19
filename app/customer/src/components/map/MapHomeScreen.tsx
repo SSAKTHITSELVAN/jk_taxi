@@ -37,7 +37,7 @@ interface MapHomeScreenProps {
 
 export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
   const { user, logout } = useAuthStore();
-  const { activeRide, getActiveRide, driverLocation, startTracking, stopTracking } = useRideStore();
+  const { activeRide, getActiveRide, driverLocation, startTracking, stopTracking, setUserLocation } = useRideStore();
   const [liveEta, setLiveEta] = useState<{ distance: number; duration: number } | null>(null);
   const insets = useSafeAreaInsets();
 
@@ -137,24 +137,29 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       setLocation({ latitude, longitude });
 
       // Reverse geocode to get location name
+      let name = 'Current Location';
+      let address = 'Your current location';
       try {
-        const address = await Location.reverseGeocodeAsync({ latitude, longitude });
-        if (address[0]) {
-          const locationStr = [
-            address[0].street || address[0].name,
-            address[0].city,
+        const geocoded = await Location.reverseGeocodeAsync({ latitude, longitude });
+        if (geocoded[0]) {
+          name = [
+            geocoded[0].street || geocoded[0].name,
+            geocoded[0].city,
           ]
             .filter(Boolean)
+            .join(', ') || 'Current Location';
+          address = [geocoded[0].street, geocoded[0].district, geocoded[0].city, geocoded[0].region]
+            .filter(Boolean)
             .join(', ');
-          setLocationName(locationStr || 'Current Location');
+          setLocationName(name);
         }
       } catch (geocodeError) {
         console.log('Geocoding failed:', geocodeError);
         setLocationName('Current Location');
       }
 
-      // Update map location
-      console.log('📍 Location updated:', { latitude, longitude });
+      // Save to store for book-ride screen
+      setUserLocation({ latitude, longitude, name, address });
 
       setIsLoadingLocation(false);
     } catch (error) {

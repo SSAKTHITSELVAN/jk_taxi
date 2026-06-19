@@ -48,6 +48,7 @@ export default function RootLayout() {
         <Stack.Screen name="book-ride-map" />
         <Stack.Screen name="book-ride-enhanced" />
         <Stack.Screen name="book-ride-complete" />
+        <Stack.Screen name="pick-on-map" />
         <Stack.Screen name="edit-profile" />
         <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
       </Stack>
