@@ -44,6 +44,12 @@ export const driverEnhancedApi = {
     return response.data;
   },
 
+  // Force complete ride (bypass location check)
+  forceCompleteRide: async (rideId: string): Promise<EnhancedRide> => {
+    const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/complete?force=true`);
+    return response.data;
+  },
+
   // Reject ride (assigned ride)
   rejectRide: async (rideId: string): Promise<{ message: string }> => {
     const response = await apiClient.post<{ message: string }>(

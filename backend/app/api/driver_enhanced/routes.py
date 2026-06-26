@@ -282,10 +282,11 @@ async def start_ride(
 @router.post("/rides/{ride_id}/complete", response_model=RideEnhancedResponse)
 async def complete_ride(
     ride_id: UUID,
+    force: bool = False,
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Complete a ride - checks driver is within 500m of dropoff location"""
+    """Complete a ride - checks driver is within 500m of dropoff unless force=true"""
     ride = db.query(RideEnhanced).filter(
         RideEnhanced.id == ride_id,
         RideEnhanced.driver_id == current_driver.id
@@ -303,15 +304,14 @@ async def complete_ride(
             detail="Can only complete rides that are started"
         )
 
-    # Location-based completion check (500m radius)
-    if ride.dropoff_lat and ride.dropoff_lng and current_driver.current_lat and current_driver.current_lng:
+    # Location-based completion check (500m radius) - skip if force=true
+    if not force and ride.dropoff_lat and ride.dropoff_lng and current_driver.current_lat and current_driver.current_lng:
         distance_to_dropoff = calculate_distance(
             current_driver.current_lat,
             current_driver.current_lng,
             ride.dropoff_lat,
             ride.dropoff_lng
         )
-        # Must be within 500 meters (0.5 km) of dropoff
         if distance_to_dropoff > 0.5:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

@@ -299,10 +299,41 @@ export default function HomeScreen() {
           setRouteCoords(null);
           loadRides();
         } catch (e: any) {
-          Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
+          const detail = e.response?.data?.detail || 'Failed to complete';
+          // If location check fails, offer force complete
+          if (e.response?.status === 400 && detail.includes('km away')) {
+            Alert.alert('Not at Destination', detail, [
+              { text: 'OK', style: 'cancel' },
+              { text: 'Force Complete', style: 'destructive', onPress: () => handleForceComplete() },
+            ]);
+          } else {
+            Alert.alert('Error', detail);
+          }
         }
       }},
     ]);
+  };
+
+  const handleForceComplete = async () => {
+    if (!activeRide) return;
+    Alert.alert(
+      'Force Complete?',
+      'You are not near the drop-off location. Are you sure the customer has been dropped off?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Yes, Complete', style: 'destructive', onPress: async () => {
+          try {
+            await driverEnhancedApi.forceCompleteRide(activeRide.id);
+            Alert.alert('Ride Completed!', `Fare: ₹${Math.round(activeRide.fare)}`);
+            setActiveRide(null);
+            setRouteCoords(null);
+            loadRides();
+          } catch (e: any) {
+            Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
+          }
+        }},
+      ]
+    );
   };
 
   const handleNavigate = () => {
