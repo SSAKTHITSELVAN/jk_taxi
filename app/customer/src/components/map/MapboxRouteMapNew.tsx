@@ -1,10 +1,14 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Alert } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, MAP_PADDING, ANIMATION_DURATION } from '../../config/mapbox-config';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
 
-Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+try {
+  Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+} catch (error) {
+  console.error('Failed to set Mapbox token in MapboxRouteMapNew:', error);
+}
 
 interface Coordinate {
   latitude: number;
@@ -73,6 +77,26 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
       const response = await fetch(url);
       const data = await response.json();
 
+      // Check for API errors
+      if (data.message) {
+        console.error('Mapbox Route API Error:', data.message);
+        Alert.alert(
+          'Route Calculation Error',
+          `Failed to calculate route.\n\nMapbox API Error: ${data.message}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'Route Calculation Error',
+          `Failed to calculate route.\n\nHTTP Status: ${response.status}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
         const coordinates = route.geometry.coordinates;
@@ -89,6 +113,11 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
       }
     } catch (error) {
       console.error('Error fetching route:', error);
+      Alert.alert(
+        'Route Calculation Error',
+        `Failed to calculate route.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+        [{ text: 'OK' }]
+      );
     }
   };
 

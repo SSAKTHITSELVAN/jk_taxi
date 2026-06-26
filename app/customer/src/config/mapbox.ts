@@ -1,5 +1,5 @@
 // Mapbox Configuration
-export const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || 'YOUR_MAPBOX_PUBLIC_TOKEN';
+export const MAPBOX_ACCESS_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
 
 // Default map center (Bangalore)
 export const DEFAULT_CENTER = {

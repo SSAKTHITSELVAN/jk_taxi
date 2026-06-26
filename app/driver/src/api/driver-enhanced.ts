@@ -52,6 +52,27 @@ export const driverEnhancedApi = {
     return response.data;
   },
 
+  // Cancel ride with reason (falls back to reject if cancel endpoint not deployed)
+  cancelRide: async (rideId: string, reason: string, customReason?: string): Promise<{ message: string }> => {
+    try {
+      const response = await apiClient.post<{ message: string }>(
+        `/api/v2/driver/rides/${rideId}/cancel`,
+        { reason, custom_reason: customReason }
+      );
+      return response.data;
+    } catch (error: any) {
+      // If /cancel endpoint doesn't exist (not deployed yet), use /reject
+      if (error.response?.status === 404) {
+        console.log('ℹ️  [CANCEL] /cancel not available, using /reject fallback');
+        const response = await apiClient.post<{ message: string }>(
+          `/api/v2/driver/rides/${rideId}/reject`
+        );
+        return response.data;
+      }
+      throw error;
+    }
+  },
+
   // Get active ride
   getActiveRide: async (): Promise<EnhancedRide> => {
     const response = await apiClient.get<EnhancedRide>('/api/v2/driver/rides/active');

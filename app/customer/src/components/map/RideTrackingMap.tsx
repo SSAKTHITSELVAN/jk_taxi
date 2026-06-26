@@ -1,12 +1,16 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text, StyleSheet, Platform, Alert } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, ANIMATION_DURATION } from '../../config/mapbox-config';
 import { Colors, FontSizes, FontWeights, BorderRadius, Spacing } from '../../constants/theme';
 
-Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+try {
+  Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+} catch (error) {
+  console.error('Failed to set Mapbox token in RideTrackingMap:', error);
+}
 
 interface Location {
   latitude: number;
@@ -101,6 +105,26 @@ export const RideTrackingMap: React.FC<RideTrackingMapProps> = ({
       const response = await fetch(url);
       const data = await response.json();
 
+      // Check for API errors
+      if (data.message) {
+        console.error('Mapbox Directions API Error:', data.message);
+        Alert.alert(
+          'Route Error',
+          `Failed to fetch route.\n\nMapbox API Error: ${data.message}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'Route Error',
+          `Failed to fetch route.\n\nHTTP Status: ${response.status}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       if (data.routes?.[0]) {
         const route = data.routes[0];
         setRouteData({
@@ -114,6 +138,11 @@ export const RideTrackingMap: React.FC<RideTrackingMapProps> = ({
       }
     } catch (error) {
       console.error('Route fetch error:', error);
+      Alert.alert(
+        'Route Error',
+        `Failed to fetch route.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+        [{ text: 'OK' }]
+      );
     }
   };
 

@@ -1,11 +1,19 @@
 // API Configuration for Driver App
+// In Expo SDK 54+, EXPO_PUBLIC_* variables are available at process.env during build
+// They are statically replaced at build time, not runtime
+// So we must use them directly, not via a function
+
+// This will be replaced at build time by Metro bundler
+const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://api.jktaxitamilnadu.com';
+
 export const API_CONFIG = {
-  BASE_URL: 'http://10.40.122.233:8000',  // Your local IP - update if changed
+  BASE_URL: API_URL,
   TIMEOUT: 30000,
 };
 
-// Update this based on your platform:
-// - Web: http://localhost:8000
-// - Android Emulator: http://10.0.2.2:8000
-// - iOS Simulator: http://localhost:8000
-// - Physical Device: http://YOUR_LOCAL_IP:8000 (currently: 10.40.122.233)
+// Debug: Log the resolved API URL
+console.log('📡 [DRIVER CONFIG] API_URL resolved to:', API_URL);
+
+// For local testing, update .env with:
+// EXPO_PUBLIC_API_URL=http://YOUR_LOCAL_IP:8000
+// Then restart: npm start --clear

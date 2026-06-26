@@ -75,7 +75,7 @@ export const EnhancedRideCard: React.FC<EnhancedRideCardProps> = ({
         <View style={styles.locationRow}>
           <Ionicons name="radio-button-on" size={16} color={Colors.success} />
           <Text style={styles.locationText} numberOfLines={1}>
-            {ride.pickup_location}
+            {typeof ride.pickup_location === 'string' ? ride.pickup_location : ride.pickup_location.address}
           </Text>
         </View>
 
@@ -90,7 +90,7 @@ export const EnhancedRideCard: React.FC<EnhancedRideCardProps> = ({
           <View style={styles.locationRow}>
             <Ionicons name="location" size={16} color={Colors.error} />
             <Text style={styles.locationText} numberOfLines={1}>
-              {ride.dropoff_location}
+              {typeof ride.dropoff_location === 'string' ? ride.dropoff_location : ride.dropoff_location.address}
             </Text>
           </View>
         )}

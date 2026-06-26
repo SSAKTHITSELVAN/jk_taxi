@@ -137,7 +137,10 @@ async def register_driver(driver_data: DriverRegister, db: Session = Depends(get
         password_hash=get_password_hash(driver_data.password),
         vehicle_number=driver_data.vehicle_number,
         vehicle_type=driver_data.vehicle_type,
-        is_verified=False
+        license_document=driver_data.license_document,
+        aadhar_document=driver_data.aadhar_document,
+        is_verified=False,
+        is_active=False  # Inactive until admin approves
     )
     db.add(new_driver)
     db.commit()

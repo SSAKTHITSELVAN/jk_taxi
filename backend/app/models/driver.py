@@ -16,8 +16,11 @@ class Driver(Base):
     vehicle_number = Column(String(20), nullable=True)
     vehicle_type = Column(String(50), nullable=True)
     is_online = Column(Boolean, default=False)
-    is_verified = Column(Boolean, default=False)
-    is_active = Column(Boolean, default=True)
+    is_verified = Column(Boolean, default=False)  # Admin verification status
+    is_active = Column(Boolean, default=False)  # Account active only after admin approval
+    license_document = Column(String(500), nullable=True)  # License photo URL/path
+    aadhar_document = Column(String(500), nullable=True)  # Aadhar photo URL/path
+    verification_notes = Column(String(500), nullable=True)  # Admin notes
     current_lat = Column(Float, nullable=True)
     current_lng = Column(Float, nullable=True)
     location_updated_at = Column(DateTime(timezone=True), nullable=True)

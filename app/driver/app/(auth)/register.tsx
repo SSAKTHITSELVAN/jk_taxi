@@ -137,7 +137,7 @@ export default function RegisterScreen() {
             />
 
             <Input
-              label="Email (Optional)"
+              label="Email"
               placeholder="Enter your email"
               value={email}
               onChangeText={setEmail}
@@ -148,7 +148,7 @@ export default function RegisterScreen() {
             />
 
             <Input
-              label="Vehicle Number (Optional)"
+              label="Vehicle Number"
               placeholder="e.g., KA01AB1234"
               value={vehicleNumber}
               onChangeText={setVehicleNumber}
@@ -157,7 +157,7 @@ export default function RegisterScreen() {
             />
 
             <Input
-              label="Vehicle Type (Optional)"
+              label="Vehicle Type"
               placeholder="e.g., Sedan, Hatchback, SUV"
               value={vehicleType}
               onChangeText={setVehicleType}

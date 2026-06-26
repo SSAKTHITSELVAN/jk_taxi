@@ -1,4 +1,4 @@
-import { MAPBOX_ACCESS_TOKEN } from '../config/maps';
+import { MAPBOX_ACCESS_TOKEN } from '../config/mapbox';
 
 interface Coordinate {
   latitude: number;

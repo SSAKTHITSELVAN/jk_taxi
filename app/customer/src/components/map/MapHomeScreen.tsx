@@ -195,6 +195,28 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       const response = await fetch(url);
       const data = await response.json();
 
+      // Check for API errors
+      if (data.message) {
+        console.error('Mapbox API Error:', data.message);
+        Alert.alert(
+          'Search Error',
+          `Mapbox API Error: ${data.message}\n\nToken: ${MAPBOX_ACCESS_TOKEN ? 'Set' : 'Missing'}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...\n\nResponse: ${JSON.stringify(data)}`,
+          [{ text: 'OK' }]
+        );
+        setSearchResults([]);
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'Search Error',
+          `Failed to search location.\n\nHTTP Status: ${response.status}\nURL: ${url.substring(0, 100)}...`,
+          [{ text: 'OK' }]
+        );
+        setSearchResults([]);
+        return;
+      }
+
       if (data.features && data.features.length > 0) {
         const mapped = data.features.map((feature: any) => ({
           name: feature.text,
@@ -208,6 +230,11 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       }
     } catch (error) {
       console.error('Location search error:', error);
+      Alert.alert(
+        'Search Error',
+        `Failed to search location.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+        [{ text: 'OK' }]
+      );
       setSearchResults([]);
     } finally {
       setIsSearchingLocation(false);

@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { MAPBOX_ACCESS_TOKEN } from '../../config/mapbox-config';
@@ -77,12 +78,39 @@ export const MapboxPlacesSearch: React.FC<MapboxPlacesSearchProps> = ({
       const response = await fetch(url);
       const data = await response.json();
 
+      // Check for API errors
+      if (data.message) {
+        console.error('Mapbox Autocomplete API Error:', data.message);
+        Alert.alert(
+          'Autocomplete Error',
+          `Mapbox API Error: ${data.message}\n\nToken: ${MAPBOX_ACCESS_TOKEN ? 'Set' : 'Missing'}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        setSuggestions([]);
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'Autocomplete Error',
+          `Failed to fetch suggestions.\n\nHTTP Status: ${response.status}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        setSuggestions([]);
+        return;
+      }
+
       if (data.features) {
         setSuggestions(data.features);
         setShowResults(true);
       }
     } catch (error) {
       console.error('Mapbox search error:', error);
+      Alert.alert(
+        'Autocomplete Error',
+        `Failed to search places.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+        [{ text: 'OK' }]
+      );
       setSuggestions([]);
     } finally {
       setIsLoading(false);
@@ -111,6 +139,26 @@ export const MapboxPlacesSearch: React.FC<MapboxPlacesSearchProps> = ({
       const response = await fetch(url);
       const data = await response.json();
 
+      // Check for API errors
+      if (data.message) {
+        console.error('Mapbox Reverse Geocoding Error:', data.message);
+        Alert.alert(
+          'Geocoding Error',
+          `Mapbox API Error: ${data.message}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      if (!response.ok) {
+        Alert.alert(
+          'Geocoding Error',
+          `Failed to get location address.\n\nHTTP Status: ${response.status}`,
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
       if (data.features && data.features.length > 0) {
         const feature = data.features[0];
         setSearchText(feature.place_name);
@@ -125,6 +173,11 @@ export const MapboxPlacesSearch: React.FC<MapboxPlacesSearchProps> = ({
       }
     } catch (error) {
       console.error('Current location error:', error);
+      Alert.alert(
+        'Geocoding Error',
+        `Failed to get location address.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        [{ text: 'OK' }]
+      );
     } finally {
       setIsLoading(false);
     }

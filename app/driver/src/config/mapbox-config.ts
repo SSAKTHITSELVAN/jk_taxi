@@ -1,7 +1,6 @@
 // Mapbox Configuration for JK Taxi
 export const MAPBOX_ACCESS_TOKEN =
-  process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ||
-  'YOUR_MAPBOX_PUBLIC_TOKEN';
+  process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN || '';
 
 // Default map center (Bangalore, India)
 export const DEFAULT_CENTER = {

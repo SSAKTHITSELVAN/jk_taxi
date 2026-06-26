@@ -108,11 +108,13 @@ class ApiClient {
 
         const isNoActiveRide = error.response?.status === 404 &&
                                error.config?.url?.includes('/active');
+        const isCancelledRide = error.response?.status === 404 &&
+                                (error.config?.url?.includes('/rides/') || error.config?.url?.includes('/cancel'));
         const isMustBeOnline = error.response?.status === 400 &&
                                error.config?.url?.includes('/available') &&
                                JSON.stringify(error.response?.data).includes('must be online');
 
-        if (!isNoActiveRide && !isMustBeOnline && error.response?.status !== 401) {
+        if (!isNoActiveRide && !isCancelledRide && !isMustBeOnline && error.response?.status !== 401) {
           console.error('❌ [DRIVER API ERROR]', error.message);
           console.error('📍 [URL]', error.config?.url);
           if (error.response) {
@@ -121,6 +123,8 @@ class ApiClient {
           }
         } else if (isNoActiveRide) {
           console.log('ℹ️  [NO ACTIVE RIDE] Driver has no active ride (this is normal)');
+        } else if (isCancelledRide) {
+          console.log('ℹ️  [CANCELLED RIDE] Ride was cancelled and no longer exists (this is normal)');
         } else if (isMustBeOnline) {
           console.log('ℹ️  [OFFLINE] Driver is offline, cannot see available rides (this is normal)');
         }

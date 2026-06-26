@@ -5,14 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
   ScrollView,
   Linking,
   Platform,
   Dimensions,
-  Animated,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
@@ -21,6 +19,8 @@ import { useAuthStore } from '../src/store/authStore';
 import { useStatusStore } from '../src/store/statusStore';
 import { driverEnhancedApi } from '../src/api/driver-enhanced';
 import { OTPVerificationModal } from '../src/components/OTPVerificationModal';
+import { DriverDrawer } from '../src/components/DriverDrawer';
+import { CancelRideModal } from '../src/components/CancelRideModal';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
 import { EnhancedRide } from '../src/types/enhanced';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, ANIMATION_DURATION } from '../src/config/mapbox-config';
@@ -34,24 +34,30 @@ export default function HomeScreen() {
   const { isOnline, toggleStatus, isUpdating } = useStatusStore();
   const insets = useSafeAreaInsets();
 
-  const [availableRides, setAvailableRides] = useState<EnhancedRide[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
   const [activeRide, setActiveRide] = useState<EnhancedRide | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   // Map state
   const [driverLoc, setDriverLoc] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const [routeCoords, setRouteCoords] = useState<number[][] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
+  const [userHeading, setUserHeading] = useState(0);
+  const [followUser, setFollowUser] = useState(true);
   const cameraRef = useRef<Mapbox.Camera>(null);
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const routeUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasInitializedCameraRef = useRef(false);
 
   // Initialize location
   useEffect(() => {
     initLocation();
   }, []);
 
-  // Ride polling
+  // Ride polling - only check for active ride
   useEffect(() => {
     if (isOnline) {
       loadRides();
@@ -59,7 +65,6 @@ export default function HomeScreen() {
       return () => clearInterval(interval);
     } else {
       setActiveRide(null);
-      setAvailableRides([]);
     }
   }, [isOnline]);
 
@@ -67,14 +72,42 @@ export default function HomeScreen() {
   useEffect(() => {
     if (activeRide && (activeRide.status === 'accepted' || activeRide.status === 'started')) {
       startLocationPush();
-      fetchRoute();
+      hasInitializedCameraRef.current = false;
+      setFollowUser(true);
+      // Initial route fetch with camera fit
+      fetchRoute(true);
+      setTimeout(() => {
+        hasInitializedCameraRef.current = true;
+        setFollowUser(true);
+      }, 3000);
     } else {
       stopLocationPush();
       setRouteCoords(null);
       setRouteInfo(null);
+      hasInitializedCameraRef.current = false;
+      setFollowUser(true);
     }
     return () => stopLocationPush();
   }, [activeRide?.status, activeRide?.id]);
+
+  // Update route when driver location changes (debounced, NO camera fit)
+  useEffect(() => {
+    if (activeRide && routeCoords && hasInitializedCameraRef.current) {
+      // Clear previous timeout
+      if (routeUpdateTimeoutRef.current) {
+        clearTimeout(routeUpdateTimeoutRef.current);
+      }
+      // Update route after 10 seconds of no location change (NO camera refit)
+      routeUpdateTimeoutRef.current = setTimeout(() => {
+        fetchRoute(false);
+      }, 10000);
+    }
+    return () => {
+      if (routeUpdateTimeoutRef.current) {
+        clearTimeout(routeUpdateTimeoutRef.current);
+      }
+    };
+  }, [driverLoc.latitude, driverLoc.longitude]);
 
   const initLocation = async () => {
     try {
@@ -82,6 +115,9 @@ export default function HomeScreen() {
       if (status !== 'granted') return;
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       setDriverLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      if (loc.coords.heading !== null && loc.coords.heading !== undefined) {
+        setUserHeading(loc.coords.heading);
+      }
     } catch {}
   };
 
@@ -93,6 +129,9 @@ export default function HomeScreen() {
         if (status !== 'granted') return;
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setDriverLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        if (loc.coords.heading !== null && loc.coords.heading !== undefined) {
+          setUserHeading(loc.coords.heading);
+        }
         await driverEnhancedApi.updateLocation(loc.coords.latitude, loc.coords.longitude);
       } catch {}
     };
@@ -107,7 +146,7 @@ export default function HomeScreen() {
     }
   };
 
-  const fetchRoute = async () => {
+  const fetchRoute = async (fitCamera: boolean = false) => {
     if (!activeRide) return;
     try {
       let destLat: number, destLng: number;
@@ -119,43 +158,56 @@ export default function HomeScreen() {
         destLng = activeRide.dropoff_lng || activeRide.pickup_lng;
       }
 
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      // Use Mapbox Navigation API for better routing
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&steps=true&banner_instructions=true&voice_instructions=true&alternatives=false&continue_straight=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
+
       const resp = await fetch(url);
       const data = await resp.json();
-      if (data.routes?.[0]) {
-        setRouteCoords(data.routes[0].geometry.coordinates);
-        setRouteInfo({ distance: data.routes[0].distance / 1000, duration: data.routes[0].duration / 60 });
 
-        if (cameraRef.current) {
-          const coords = data.routes[0].geometry.coordinates;
+      if (data.routes?.[0]) {
+        const route = data.routes[0];
+        setRouteCoords(route.geometry.coordinates);
+        setRouteInfo({
+          distance: route.distance / 1000,
+          duration: route.duration / 60
+        });
+
+        // Only fit camera once when route is first loaded
+        if (cameraRef.current && fitCamera) {
+          const coords = route.geometry.coordinates;
           const lngs = coords.map((c: number[]) => c[0]);
           const lats = coords.map((c: number[]) => c[1]);
-          cameraRef.current.fitBounds(
-            [Math.max(...lngs), Math.max(...lats)],
-            [Math.min(...lngs), Math.min(...lats)],
-            [80, 50, 300, 50], ANIMATION_DURATION
-          );
+
+          const ne = [Math.max(...lngs), Math.max(...lats)];
+          const sw = [Math.min(...lngs), Math.min(...lats)];
+
+          // Padding: [top, right, bottom, left]
+          const paddingTop = 150;
+          const paddingRight = 80;
+          const paddingBottom = 450; // Space for bottom panel
+          const paddingLeft = 80;
+
+          cameraRef.current.fitBounds(ne, sw, [paddingTop, paddingRight, paddingBottom, paddingLeft], 2000);
         }
       }
-    } catch {}
+    } catch (error) {
+      console.log('Error fetching route:', error);
+    }
   };
 
   const loadRides = async () => {
     try {
-      try {
-        const active = await driverEnhancedApi.getActiveRide();
-        setActiveRide(active);
-        setAvailableRides([]);
-      } catch (e: any) {
-        if (e.response?.status === 404) {
-          setActiveRide(null);
-          try {
-            const available = await driverEnhancedApi.getAvailableRides();
-            setAvailableRides(available);
-          } catch { setAvailableRides([]); }
-        }
+      const active = await driverEnhancedApi.getActiveRide();
+      console.log('✅ [ACTIVE RIDE FOUND]', active.id, 'Status:', active.status);
+      setActiveRide(active);
+    } catch (e: any) {
+      if (e.response?.status === 404) {
+        console.log('ℹ️  [NO ACTIVE RIDE] Driver has no active rides');
+        setActiveRide(null);
       }
-    } catch {} finally { setIsLoading(false); }
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleToggleStatus = async () => {
@@ -163,25 +215,26 @@ export default function HomeScreen() {
       Alert.alert('Cannot Go Offline', 'Complete your active ride first.');
       return;
     }
-    try { await toggleStatus(); } catch { Alert.alert('Error', 'Failed to update status.'); }
-  };
 
-  const handleAcceptRide = async (rideId: string) => {
-    try {
-      const ride = await driverEnhancedApi.acceptRide(rideId);
-      setActiveRide(ride);
-      setAvailableRides([]);
-    } catch (e: any) {
-      Alert.alert('Error', e.response?.data?.detail || 'Failed to accept ride');
-      loadRides();
-    }
-  };
-
-  const handleRejectRide = async (rideId: string) => {
-    try {
-      await driverEnhancedApi.rejectRide(rideId);
-      setAvailableRides(prev => prev.filter(r => r.id !== rideId));
-    } catch {}
+    Alert.alert(
+      isOnline ? 'Go Offline?' : 'Go Online?',
+      isOnline
+        ? 'You will stop receiving ride requests.'
+        : 'You will start receiving ride requests.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: isOnline ? 'Go Offline' : 'Go Online',
+          onPress: async () => {
+            try {
+              await toggleStatus();
+            } catch {
+              Alert.alert('Error', 'Failed to update status.');
+            }
+          }
+        },
+      ]
+    );
   };
 
   const handleVerifyOTP = () => setShowOTPModal(true);
@@ -235,89 +288,259 @@ export default function HomeScreen() {
   };
 
   const handleCallCustomer = () => {
-    // In a real app, customer phone would come from API
-    Alert.alert('Call Customer', 'Calling customer...', [{ text: 'OK' }]);
+    if (!activeRide) return;
+    const phoneNumber = activeRide.customer?.phone || activeRide.passenger_phone || '';
+    if (!phoneNumber) {
+      Alert.alert('Error', 'Customer phone number not available');
+      return;
+    }
+    const phoneUrl = Platform.select({
+      ios: `telprompt:${phoneNumber}`,
+      android: `tel:${phoneNumber}`,
+    });
+    if (phoneUrl) {
+      Linking.openURL(phoneUrl).catch(() => {
+        Alert.alert('Error', 'Unable to make call');
+      });
+    }
   };
 
+  const handleCancelRide = () => {
+    setShowCancelModal(true);
+  };
+
+  const handleConfirmCancel = async (reason: string, customReason?: string) => {
+    if (!activeRide) return;
+    try {
+      await driverEnhancedApi.cancelRide(activeRide.id, reason, customReason);
+
+      // Clear ride state immediately
+      setShowCancelModal(false);
+      setActiveRide(null);
+      setRouteCoords(null);
+      setRouteInfo(null);
+
+      Alert.alert('Ride Cancelled', 'The ride has been cancelled successfully.');
+
+      // Reload rides after a short delay to allow backend to process
+      setTimeout(() => {
+        loadRides();
+      }, 500);
+    } catch (e: any) {
+      // If it's a 404, the ride was already cancelled/doesn't exist
+      if (e.response?.status === 404) {
+        setShowCancelModal(false);
+        setActiveRide(null);
+        setRouteCoords(null);
+        setRouteInfo(null);
+        Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
+        setTimeout(() => loadRides(), 500);
+      } else {
+        Alert.alert('Error', e.response?.data?.detail || 'Failed to cancel ride');
+        throw e;
+      }
+    }
+  };
+
+  // Build route GeoJSON
   const routeGeoJSON = routeCoords ? {
     type: 'Feature' as const,
     geometry: { type: 'LineString' as const, coordinates: routeCoords },
     properties: {},
   } : null;
 
+  // Build route arrows GeoJSON (arrows along route every ~100 coords)
+  const routeArrowsGeoJSON = routeCoords && routeCoords.length > 4 ? {
+    type: 'FeatureCollection' as const,
+    features: routeCoords
+      .filter((_: number[], i: number) => i > 0 && i % Math.max(1, Math.floor(routeCoords.length / 15)) === 0 && i < routeCoords.length - 1)
+      .map((coord: number[], idx: number) => {
+        const prevIdx = Math.max(0, routeCoords.indexOf(coord) - 3);
+        const prev = routeCoords[prevIdx];
+        const bearing = Math.atan2(coord[0] - prev[0], coord[1] - prev[1]) * (180 / Math.PI);
+        return {
+          type: 'Feature' as const,
+          geometry: { type: 'Point' as const, coordinates: coord },
+          properties: { bearing },
+        };
+      }),
+  } : null;
+
+  // Overview handler: show full route
+  const handleOverview = () => {
+    if (!routeCoords || !cameraRef.current) return;
+    setFollowUser(false);
+    const lngs = routeCoords.map((c: number[]) => c[0]);
+    const lats = routeCoords.map((c: number[]) => c[1]);
+    const ne = [Math.max(...lngs), Math.max(...lats)];
+    const sw = [Math.min(...lngs), Math.min(...lats)];
+    cameraRef.current.fitBounds(ne, sw, [150, 80, 320, 80], 1500);
+  };
+
+  // Recenter handler: follow driver
+  const handleRecenter = () => {
+    setFollowUser(true);
+    if (cameraRef.current) {
+      cameraRef.current.setCamera({
+        centerCoordinate: [driverLoc.longitude, driverLoc.latitude],
+        zoomLevel: 16,
+        pitch: activeRide ? 60 : 0,
+        heading: activeRide ? userHeading : 0,
+        animationDuration: 1000,
+      });
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Full screen map */}
-      <Mapbox.MapView style={styles.map} styleURL={MAP_STYLES.STREETS} compassEnabled attributionEnabled={false} logoEnabled={false}>
-        <Mapbox.Camera ref={cameraRef} zoomLevel={14} centerCoordinate={[driverLoc.longitude, driverLoc.latitude]} animationDuration={ANIMATION_DURATION} />
-        <Mapbox.UserLocation visible showsUserHeadingIndicator />
+      {/* Full screen Mapbox Navigation Map */}
+      <Mapbox.MapView
+        style={styles.map}
+        styleURL="mapbox://styles/mapbox/navigation-day-v1"
+        compassEnabled={false}
+        attributionEnabled={false}
+        logoEnabled={false}
+        pitchEnabled={true}
+        rotateEnabled={true}
+        onTouchStart={() => setFollowUser(false)}
+      >
+        {/* Camera - follows driver in navigation mode */}
+        <Mapbox.Camera
+          ref={cameraRef}
+          zoomLevel={16}
+          centerCoordinate={[driverLoc.longitude, driverLoc.latitude]}
+          animationDuration={1000}
+          pitch={followUser && activeRide ? 60 : 0}
+          heading={followUser && activeRide ? userHeading : 0}
+          followUserLocation={followUser}
+          followUserMode={followUser && activeRide ? "course" : "normal"}
+          followZoomLevel={16}
+          followPitch={followUser && activeRide ? 60 : 0}
+        />
 
-        {/* Route */}
+        {/* Driver Location Puck with bearing arrow */}
+        <Mapbox.LocationPuck
+          pulsing={{ isEnabled: true, color: '#4688F1', radius: 50 }}
+          puckBearingEnabled
+          puckBearing="course"
+        />
+
+        {/* Route Line - Casing (white border) */}
         {routeGeoJSON && (
-          <Mapbox.ShapeSource id="driverRoute" shape={routeGeoJSON}>
-            <Mapbox.LineLayer id="driverRouteLine" style={{ lineColor: Colors.primary, lineWidth: 5, lineOpacity: 0.85, lineCap: 'round', lineJoin: 'round' }} />
+          <Mapbox.ShapeSource id="routeCasing" shape={routeGeoJSON}>
+            <Mapbox.LineLayer
+              id="routeCasingLine"
+              style={{
+                lineColor: '#ffffff',
+                lineWidth: 12,
+                lineOpacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
           </Mapbox.ShapeSource>
         )}
 
-        {/* Pickup marker */}
-        {activeRide && (
-          <Mapbox.PointAnnotation id="pickup" coordinate={[activeRide.pickup_lng, activeRide.pickup_lat]} title="Pickup">
-            <View style={[styles.mapMarker, { backgroundColor: '#4CAF50' }]}>
-              <Text style={styles.mapMarkerText}>P</Text>
+        {/* Route Line - Main (blue) */}
+        {routeGeoJSON && (
+          <Mapbox.ShapeSource id="driverRoute" shape={routeGeoJSON}>
+            <Mapbox.LineLayer
+              id="driverRouteLine"
+              style={{
+                lineColor: '#4A89F3',
+                lineWidth: 8,
+                lineOpacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        )}
+
+        {/* Route Arrows - directional triangles along route */}
+        {routeArrowsGeoJSON && (
+          <Mapbox.ShapeSource id="routeArrows" shape={routeArrowsGeoJSON}>
+            <Mapbox.SymbolLayer
+              id="routeArrowSymbols"
+              style={{
+                iconImage: 'oneway',
+                iconSize: 0.7,
+                iconRotate: ['get', 'bearing'],
+                iconRotationAlignment: 'map',
+                iconAllowOverlap: true,
+                iconIgnorePlacement: true,
+                iconPitchAlignment: 'map',
+                iconOpacity: 0.9,
+              }}
+            />
+          </Mapbox.ShapeSource>
+        )}
+
+        {/* Destination Marker - Pickup (green) */}
+        {activeRide && activeRide.status === 'accepted' && (
+          <Mapbox.PointAnnotation
+            id="pickupPin"
+            coordinate={[activeRide.pickup_lng, activeRide.pickup_lat]}
+          >
+            <View style={styles.destinationPin}>
+              <View style={styles.destinationPinInner}>
+                <Ionicons name="person" size={16} color="#fff" />
+              </View>
             </View>
           </Mapbox.PointAnnotation>
         )}
 
-        {/* Dropoff marker */}
-        {activeRide && activeRide.dropoff_lat && activeRide.dropoff_lng && (
-          <Mapbox.PointAnnotation id="dropoff" coordinate={[activeRide.dropoff_lng, activeRide.dropoff_lat]} title="Dropoff">
-            <View style={[styles.mapMarker, { backgroundColor: '#F44336' }]}>
-              <Text style={styles.mapMarkerText}>D</Text>
+        {/* Destination Marker - Dropoff (red) */}
+        {activeRide && activeRide.status === 'started' && activeRide.dropoff_lat && activeRide.dropoff_lng && (
+          <Mapbox.PointAnnotation
+            id="dropoffPin"
+            coordinate={[activeRide.dropoff_lng, activeRide.dropoff_lat]}
+          >
+            <View style={[styles.destinationPin, { backgroundColor: '#EF4444' }]}>
+              <View style={[styles.destinationPinInner, { backgroundColor: '#DC2626' }]}>
+                <Ionicons name="flag" size={16} color="#fff" />
+              </View>
             </View>
           </Mapbox.PointAnnotation>
         )}
       </Mapbox.MapView>
 
-      {/* Top bar: driver info + online toggle */}
-      <View style={[styles.topBar, { paddingTop: insets.top + 8 }]}>
-        <TouchableOpacity style={styles.profileBtn} onPress={() => router.push('/edit-profile')}>
-          <View style={styles.avatarSmall}>
-            <Text style={styles.avatarText}>{(driver?.name || 'D').charAt(0)}</Text>
-          </View>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.onlineToggle, isOnline && styles.onlineToggleActive]}
-          onPress={handleToggleStatus}
-          disabled={isUpdating}
-        >
-          <View style={[styles.toggleDot, isOnline && styles.toggleDotActive]} />
-          <Text style={[styles.toggleText, isOnline && styles.toggleTextActive]}>
-            {isUpdating ? '...' : isOnline ? 'Online' : 'Offline'}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuBtn} onPress={() => {
-          Alert.alert('Menu', '', [
-            { text: 'My Rides', onPress: () => router.push('/rides-enhanced') },
-            { text: 'Logout', style: 'destructive', onPress: async () => { await logout(); router.replace('/login'); } },
-            { text: 'Cancel', style: 'cancel' },
-          ]);
-        }}>
-          <Ionicons name="menu" size={22} color="#333" />
-        </TouchableOpacity>
+      {/* Map Control Buttons - Right side */}
+      <View style={[styles.mapControls, { bottom: activeRide ? 300 : 80 }]}>
+        {/* Overview button - show full route */}
+        {activeRide && routeCoords && (
+          <TouchableOpacity style={styles.mapControlBtn} onPress={handleOverview}>
+            <Ionicons name="expand" size={22} color="#333" />
+          </TouchableOpacity>
+        )}
+        {/* Recenter button - follow driver */}
+        {!followUser && (
+          <TouchableOpacity style={styles.mapControlBtn} onPress={handleRecenter}>
+            <Ionicons name="navigate" size={22} color={Colors.primary} />
+          </TouchableOpacity>
+        )}
       </View>
 
-      {/* Route info badge */}
-      {routeInfo && activeRide && (
-        <View style={styles.routeInfoBadge}>
-          <Ionicons name="navigate" size={14} color={Colors.primary} />
-          <Text style={styles.routeInfoText}>
-            {routeInfo.distance.toFixed(1)} km • {Math.ceil(routeInfo.duration)} min
-            {activeRide.status === 'accepted' ? ' to pickup' : ' to dropoff'}
-          </Text>
-        </View>
-      )}
+      {/* Hamburger Menu Button - Top Left */}
+      <TouchableOpacity
+        style={[styles.hamburgerBtn, { top: insets.top + 12, left: 16 }]}
+        onPress={() => setDrawerOpen(true)}
+      >
+        <Ionicons name="menu" size={28} color="#333" />
+      </TouchableOpacity>
+
+      {/* Transparent Status Badge - Top Center (Always visible) */}
+      <TouchableOpacity
+        style={[styles.transparentStatusBadge, { top: insets.top + 12 }]}
+        onPress={handleToggleStatus}
+        disabled={isUpdating}
+        activeOpacity={0.7}
+      >
+        <View style={[styles.statusBadgeDot, isOnline && styles.statusBadgeDotActive]} />
+        <Text style={[styles.statusBadgeText, isOnline && styles.statusBadgeTextActive]}>
+          {isUpdating ? 'Updating...' : isOnline ? 'Online' : 'Offline'}
+        </Text>
+      </TouchableOpacity>
 
       {/* Offline overlay */}
       {!isOnline && (
@@ -333,127 +556,124 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* Available ride request popup */}
-      {isOnline && !activeRide && availableRides.length > 0 && (
-        <View style={[styles.rideRequestCard, { bottom: insets.bottom + 16 }]}>
-          <View style={styles.rideRequestHeader}>
-            <View style={styles.rideRequestBadge}>
-              <Ionicons name="notifications" size={14} color="#FFF" />
-              <Text style={styles.rideRequestBadgeText}>New Ride</Text>
-            </View>
-            <Text style={styles.rideRequestFare}>₹{Math.round(availableRides[0].fare)}</Text>
-          </View>
 
-          <View style={styles.rideRequestLocations}>
-            <View style={styles.rideLocRow}>
-              <View style={[styles.locDot, { backgroundColor: '#4CAF50' }]} />
-              <Text style={styles.rideLocText} numberOfLines={1}>{String(availableRides[0].pickup_location)}</Text>
-            </View>
-            <View style={styles.rideLocRow}>
-              <View style={[styles.locDot, { backgroundColor: '#F44336' }]} />
-              <Text style={styles.rideLocText} numberOfLines={1}>{String(availableRides[0].dropoff_location || 'Rental')}</Text>
-            </View>
-          </View>
-
-          <View style={styles.rideRequestMeta}>
-            <Text style={styles.metaText}>{availableRides[0].distance_km?.toFixed(1)} km</Text>
-            <Text style={styles.metaDot}>•</Text>
-            <Text style={styles.metaText}>{availableRides[0].vehicle_category}</Text>
-            <Text style={styles.metaDot}>•</Text>
-            <Text style={styles.metaText}>{availableRides[0].trip_type.replace('_', ' ')}</Text>
-          </View>
-
-          <View style={styles.rideRequestActions}>
-            <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRejectRide(availableRides[0].id)}>
-              <Ionicons name="close" size={22} color="#EF4444" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAcceptRide(availableRides[0].id)}>
-              <Ionicons name="checkmark" size={22} color="#FFF" />
-              <Text style={styles.acceptBtnText}>Accept</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      )}
-
-      {/* Active ride bottom panel */}
+      {/* Active ride bottom panel - scrollable, compact */}
       {activeRide && (
-        <View style={[styles.activeRidePanel, { paddingBottom: insets.bottom + 12 }]}>
-          {/* Status banner */}
-          <View style={styles.statusBanner}>
-            <View style={[styles.statusDot, {
-              backgroundColor: activeRide.status === 'accepted' ? '#3B82F6' : '#8B5CF6'
-            }]} />
-            <Text style={styles.statusText}>
-              {activeRide.status === 'accepted'
-                ? (activeRide.otp_verified ? 'Ready to Start' : 'Heading to Pickup')
-                : 'Trip In Progress'}
-            </Text>
-          </View>
+        <View style={[styles.activeRidePanel, { paddingBottom: insets.bottom + 8 }]}>
+          {/* Drag handle */}
+          <View style={styles.dragHandle} />
 
-          {/* Customer info */}
-          <View style={styles.customerRow}>
-            <View style={styles.customerAvatar}>
-              <Ionicons name="person" size={18} color="#FFF" />
-            </View>
-            <View style={styles.customerInfo}>
-              <Text style={styles.customerName}>
-                {activeRide.booking_for_self === false ? activeRide.passenger_name || 'Passenger' : 'Customer'}
-              </Text>
-              <Text style={styles.customerMeta}>
-                {activeRide.payment_method === 'cash' ? 'Cash' : 'Online'} • ₹{Math.round(activeRide.fare)}
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.callBtn} onPress={handleCallCustomer}>
-              <Ionicons name="call" size={18} color="#4CAF50" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navBtn} onPress={handleNavigate}>
-              <Ionicons name="navigate" size={18} color={Colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Location summary */}
-          <View style={styles.activeLocations}>
-            {activeRide.status === 'accepted' && (
-              <View style={styles.activeLocRow}>
-                <View style={[styles.locDot, { backgroundColor: '#4CAF50' }]} />
-                <Text style={styles.activeLocText} numberOfLines={1}>{String(activeRide.pickup_location)}</Text>
+          <ScrollView
+            style={styles.panelScroll}
+            showsVerticalScrollIndicator={true}
+            nestedScrollEnabled={true}
+            bounces={false}
+          >
+            {/* Route Info - Distance & Time */}
+            {routeInfo && (
+              <View style={styles.rideRouteInfo}>
+                <Ionicons name="navigate" size={16} color={Colors.primary} />
+                <Text style={styles.rideRouteText}>
+                  {routeInfo.distance.toFixed(1)} km • {Math.ceil(routeInfo.duration)} min
+                </Text>
+                <Text style={styles.rideRouteTo}>
+                  {activeRide.status === 'accepted' ? 'to pickup' : 'to dropoff'}
+                </Text>
               </View>
             )}
-            {activeRide.status === 'started' && activeRide.dropoff_location && (
-              <View style={styles.activeLocRow}>
-                <View style={[styles.locDot, { backgroundColor: '#F44336' }]} />
-                <Text style={styles.activeLocText} numberOfLines={1}>{String(activeRide.dropoff_location)}</Text>
-              </View>
-            )}
-          </View>
 
-          {/* Action button */}
-          {activeRide.status === 'accepted' && !activeRide.otp_verified && (
-            <TouchableOpacity style={styles.otpBtn} onPress={handleVerifyOTP}>
-              <Ionicons name="shield-checkmark" size={18} color="#FFF" />
-              <Text style={styles.otpBtnText}>Verify OTP</Text>
-            </TouchableOpacity>
-          )}
-          {activeRide.status === 'accepted' && activeRide.otp_verified && (
-            <TouchableOpacity style={styles.startBtn} onPress={handleStartRide}>
-              <Ionicons name="play-circle" size={18} color="#FFF" />
-              <Text style={styles.startBtnText}>Start Ride</Text>
-            </TouchableOpacity>
-          )}
-          {activeRide.status === 'started' && (
-            <TouchableOpacity style={styles.completeBtn} onPress={handleCompleteRide}>
-              <Ionicons name="checkmark-circle" size={18} color="#FFF" />
-              <Text style={styles.completeBtnText}>End Ride</Text>
-            </TouchableOpacity>
-          )}
+            {/* Status banner */}
+            <View style={styles.statusBanner}>
+              <View style={[styles.statusDot, {
+                backgroundColor: activeRide.status === 'accepted' ? '#3B82F6' : '#8B5CF6'
+              }]} />
+              <Text style={styles.statusText}>
+                {activeRide.status === 'accepted'
+                  ? (activeRide.otp_verified ? 'Ready to Start' : 'Heading to Pickup')
+                  : 'Trip In Progress'}
+              </Text>
+            </View>
+
+            {/* Customer info with name and call button */}
+            <View style={styles.customerSection}>
+              <View style={styles.customerRow}>
+                <View style={styles.customerAvatar}>
+                  <Ionicons name="person" size={18} color="#FFF" />
+                </View>
+                <View style={styles.customerInfo}>
+                  <Text style={styles.customerName}>
+                    {activeRide.booking_for_self === false && activeRide.passenger_name
+                      ? activeRide.passenger_name
+                      : activeRide.customer?.name || 'Customer'}
+                  </Text>
+                  <Text style={styles.customerMeta}>
+                    {activeRide.payment_method === 'cash' ? 'Cash' : 'Online'} • ₹{Math.round(activeRide.fare)}
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.callBtn} onPress={handleCallCustomer}>
+                  <Ionicons name="call" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.navBtn} onPress={handleNavigate}>
+                  <Ionicons name="navigate" size={18} color="#FFFFFF" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Location summary */}
+            <View style={styles.activeLocations}>
+              {activeRide.status === 'accepted' && (
+                <View style={styles.activeLocRow}>
+                  <View style={[styles.locDot, { backgroundColor: '#4CAF50' }]} />
+                  <Text style={styles.activeLocText} numberOfLines={1}>{String(activeRide.pickup_location)}</Text>
+                </View>
+              )}
+              {activeRide.status === 'started' && activeRide.dropoff_location && (
+                <View style={styles.activeLocRow}>
+                  <View style={[styles.locDot, { backgroundColor: '#F44336' }]} />
+                  <Text style={styles.activeLocText} numberOfLines={1}>{String(activeRide.dropoff_location)}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Action buttons */}
+            {activeRide.status === 'accepted' && !activeRide.otp_verified && (
+              <>
+                <TouchableOpacity style={styles.otpBtn} onPress={handleVerifyOTP}>
+                  <Ionicons name="shield-checkmark" size={18} color="#FFF" />
+                  <Text style={styles.otpBtnText}>Verify OTP</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelRide}>
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                  <Text style={styles.cancelBtnText}>Cancel Ride</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {activeRide.status === 'accepted' && activeRide.otp_verified && (
+              <>
+                <TouchableOpacity style={styles.startBtn} onPress={handleStartRide}>
+                  <Ionicons name="play-circle" size={18} color="#FFF" />
+                  <Text style={styles.startBtnText}>Start Ride</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelRide}>
+                  <Ionicons name="close-circle" size={18} color="#EF4444" />
+                  <Text style={styles.cancelBtnText}>Cancel Ride</Text>
+                </TouchableOpacity>
+              </>
+            )}
+            {activeRide.status === 'started' && (
+              <TouchableOpacity style={styles.completeBtn} onPress={handleCompleteRide}>
+                <Ionicons name="checkmark-circle" size={18} color="#FFF" />
+                <Text style={styles.completeBtnText}>End Ride</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
         </View>
       )}
 
-      {/* No rides indicator */}
-      {isOnline && !activeRide && availableRides.length === 0 && (
-        <View style={styles.waitingBadge}>
-          <ActivityIndicator size="small" color={Colors.primary} />
-          <Text style={styles.waitingText}>Waiting for rides...</Text>
+      {/* No active ride indicator */}
+      {isOnline && !activeRide && (
+        <View style={styles.noRideBadge}>
+          <Text style={styles.noRideText}>Online - No active rides</Text>
         </View>
       )}
 
@@ -466,6 +686,20 @@ export default function HomeScreen() {
           onClose={() => setShowOTPModal(false)}
         />
       )}
+
+      {/* Cancel Ride Modal */}
+      <CancelRideModal
+        visible={showCancelModal}
+        onClose={() => setShowCancelModal(false)}
+        onConfirm={handleConfirmCancel}
+      />
+
+      {/* Drawer Menu */}
+      <DriverDrawer
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        isOnline={isOnline}
+      />
     </View>
   );
 }
@@ -474,22 +708,104 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
 
-  // Top bar
-  topBar: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  profileBtn: {},
-  avatarSmall: { width: 36, height: 36, borderRadius: 18, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: '#FFF', fontSize: 14, fontWeight: '700' },
-  onlineToggle: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F5F5F5', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5, borderColor: '#E0E0E0' },
-  onlineToggleActive: { backgroundColor: '#E8F5E9', borderColor: '#4CAF50' },
-  toggleDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#CCC', marginRight: 8 },
-  toggleDotActive: { backgroundColor: '#4CAF50' },
-  toggleText: { fontSize: 14, fontWeight: '600', color: '#666' },
-  toggleTextActive: { color: '#2E7D32' },
-  menuBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F5F5', alignItems: 'center', justifyContent: 'center' },
+  // Map control buttons
+  mapControls: {
+    position: 'absolute',
+    right: 16,
+    gap: 10,
+    zIndex: 100,
+  },
+  mapControlBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+
+  // Destination pin marker
+  destinationPin: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#10B981',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  destinationPinInner: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    backgroundColor: '#059669',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+
+  // Hamburger button - top left
+  hamburgerBtn: {
+    position: 'absolute',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 100,
+  },
+
+  // Transparent status badge - top center
+  transparentStatusBadge: {
+    position: 'absolute',
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.5)',
+    zIndex: 99,
+  },
+  statusBadgeDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#999',
+    marginRight: 8,
+  },
+  statusBadgeDotActive: {
+    backgroundColor: '#1B5E20',
+  },
+  statusBadgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#666',
+  },
+  statusBadgeTextActive: {
+    color: '#1B5E20',
+  },
+
 
   // Route info
-  routeInfoBadge: { position: 'absolute', top: 110, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 4, gap: 6 },
-  routeInfoText: { fontSize: 13, fontWeight: '600', color: '#333' },
 
   // Offline
   offlineOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
@@ -509,41 +825,75 @@ const styles = StyleSheet.create({
   rideLocRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   locDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
   rideLocText: { fontSize: 14, color: '#333', flex: 1 },
-  rideRequestMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 14 },
-  metaText: { fontSize: 12, color: '#999', textTransform: 'capitalize' },
-  metaDot: { marginHorizontal: 6, color: '#CCC' },
+  rideRequestMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 6 },
+  metaText: { fontSize: 12, color: '#666', textTransform: 'capitalize', marginLeft: 2 },
+  metaDot: { marginHorizontal: 4, color: '#CCC' },
   rideRequestActions: { flexDirection: 'row', gap: 12 },
   rejectBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EF4444' },
   acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4CAF50', borderRadius: 12, paddingVertical: 14, gap: 6 },
   acceptBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 
-  // Active ride panel
-  activeRidePanel: { position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.1, shadowRadius: 8, elevation: 10 },
-  statusBanner: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  // Active ride panel - compact, scrollable
+  activeRidePanel: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: 280, backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10 },
+
+  // Panel scroll
+  panelScroll: { flexGrow: 0 },
+
+  // Drag handle
+  dragHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: '#DDD', alignSelf: 'center', marginBottom: 10 },
+
+  // Route info in bottom panel
+  rideRouteInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0F5FF',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 10,
+    gap: 5,
+  },
+  rideRouteText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  rideRouteTo: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 2,
+  },
+
+  statusBanner: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
   statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  statusText: { fontSize: 14, fontWeight: '600', color: '#333' },
-  customerRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  statusText: { fontSize: 13, fontWeight: '600', color: '#333' },
+
+  // Customer section
+  customerSection: { marginBottom: 10 },
+  customerRow: { flexDirection: 'row', alignItems: 'center' },
   customerAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
-  customerInfo: { flex: 1, marginLeft: 12 },
-  customerName: { fontSize: 15, fontWeight: '600', color: '#000' },
-  customerMeta: { fontSize: 12, color: '#666', marginTop: 2 },
-  callBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#E8F5E9', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
-  navBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center' },
-  activeLocations: { marginBottom: 12 },
+  customerInfo: { flex: 1, marginLeft: 10 },
+  customerName: { fontSize: 15, fontWeight: '700', color: '#000', marginBottom: 2 },
+  customerMeta: { fontSize: 12, color: '#666' },
+  callBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center', marginRight: 8 },
+  navBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: Colors.primary, alignItems: 'center', justifyContent: 'center' },
+
+  activeLocations: { marginBottom: 10 },
   activeLocRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  activeLocText: { fontSize: 13, color: '#333', flex: 1, marginLeft: 8 },
-  otpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F59E0B', borderRadius: 12, paddingVertical: 14, gap: 6 },
-  otpBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3B82F6', borderRadius: 12, paddingVertical: 14, gap: 6 },
-  startBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-  completeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 14, gap: 6 },
-  completeBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  activeLocText: { fontSize: 12, color: '#333', flex: 1, marginLeft: 8 },
 
-  // Waiting
-  waitingBadge: { position: 'absolute', bottom: 32, alignSelf: 'center', flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3, gap: 8 },
-  waitingText: { fontSize: 14, color: '#666', fontWeight: '500' },
+  // Action buttons
+  otpBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F59E0B', borderRadius: 10, paddingVertical: 12, gap: 6, marginBottom: 6 },
+  otpBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  startBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#3B82F6', borderRadius: 10, paddingVertical: 12, gap: 6, marginBottom: 6 },
+  startBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  completeBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10B981', borderRadius: 10, paddingVertical: 12, gap: 6 },
+  completeBtnText: { color: '#FFF', fontSize: 15, fontWeight: '700' },
+  cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, paddingVertical: 12, gap: 6, borderWidth: 1.5, borderColor: '#EF4444' },
+  cancelBtnText: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
 
-  // Map markers
-  mapMarker: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: '#FFF' },
-  mapMarkerText: { color: '#FFF', fontSize: 11, fontWeight: '700' },
+  // No active ride badge
+  noRideBadge: { position: 'absolute', bottom: 32, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
+  noRideText: { fontSize: 14, color: '#666', fontWeight: '600' },
+
 });

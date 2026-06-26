@@ -1,10 +1,19 @@
-import React, { useRef, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useRef, useEffect, useState } from 'react';
+import { StyleSheet, View, Alert } from 'react-native';
 import Mapbox, { Camera, MapView, ShapeSource, CircleLayer, UserLocation } from '@rnmapbox/maps';
 import { MAPBOX_ACCESS_TOKEN, MAPBOX_STYLE_URL } from '../../config/mapbox';
 
 // Initialize Mapbox
-Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+try {
+  Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
+} catch (error) {
+  console.error('Failed to set Mapbox token:', error);
+  Alert.alert(
+    'Map Configuration Error',
+    `Failed to initialize map: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
+    [{ text: 'OK' }]
+  );
+}
 
 interface MapboxMapProps {
   latitude: number;
@@ -24,6 +33,7 @@ export const MapboxMap: React.FC<MapboxMapProps> = ({
   onRegionChange,
 }) => {
   const cameraRef = useRef<Camera>(null);
+  const [hasShownError, setHasShownError] = useState(false);
 
   useEffect(() => {
     if (cameraRef.current) {
@@ -34,6 +44,18 @@ export const MapboxMap: React.FC<MapboxMapProps> = ({
       });
     }
   }, [latitude, longitude, zoom]);
+
+  const handleMapError = (error: any) => {
+    console.error('Map Error:', error);
+    if (!hasShownError) {
+      setHasShownError(true);
+      Alert.alert(
+        'Map Loading Error',
+        `Failed to load map tiles.\n\nError: ${error?.message || 'Unknown error'}\n\nToken status: ${MAPBOX_ACCESS_TOKEN ? 'Set' : 'Missing'}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 15)}...`,
+        [{ text: 'OK' }]
+      );
+    }
+  };
 
   // GeoJSON for marker
   const markerGeoJSON = {
@@ -54,6 +76,7 @@ export const MapboxMap: React.FC<MapboxMapProps> = ({
         styleURL={MAPBOX_STYLE_URL}
         compassEnabled={false}
         scaleBarEnabled={false}
+        onDidFailLoadingMap={handleMapError}
       >
         <Camera
           ref={cameraRef}
