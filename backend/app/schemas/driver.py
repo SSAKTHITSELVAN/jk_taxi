@@ -17,6 +17,9 @@ class DriverResponse(DriverBase):
     is_online: bool
     is_verified: bool
     is_active: bool
+    license_document: Optional[str] = None
+    aadhar_document: Optional[str] = None
+    verification_notes: Optional[str] = None
     created_at: datetime
 
     class Config:

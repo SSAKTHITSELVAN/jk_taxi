@@ -7,15 +7,23 @@ import {
   KeyboardAvoidingView,
   Platform,
   Alert,
+  TouchableOpacity,
+  Image,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+let ImagePicker: any = null;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (e) {
+  // Not available in Expo Go
+}
 import { useAuthStore } from '../../src/store/authStore';
 import { Button } from '../../src/components/common/Button';
 import { Input } from '../../src/components/common/Input';
 import { Card } from '../../src/components/common/Card';
-import { Colors, Spacing, FontSizes, FontWeights } from '../../src/constants/theme';
+import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../src/constants/theme';
 import {
   validatePhone,
   validateEmail,
@@ -31,15 +39,91 @@ export default function RegisterScreen() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [vehicleNumber, setVehicleNumber] = useState('');
   const [vehicleType, setVehicleType] = useState('');
+  const [licenseImage, setLicenseImage] = useState<string | null>(null);
+  const [aadharImage, setAadharImage] = useState<string | null>(null);
   const [errors, setErrors] = useState({
     name: '',
     phone: '',
     email: '',
     password: '',
     confirmPassword: '',
+    documents: '',
   });
 
   const { register, isLoading, error, clearError } = useAuthStore();
+
+  const pickImage = async (type: 'license' | 'aadhar') => {
+    if (!ImagePicker) {
+      Alert.alert('Not Available', 'Image picker requires a development build. Please use a dev build to upload documents.');
+      return;
+    }
+
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow access to photos to upload documents.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      if (type === 'license') {
+        setLicenseImage(base64);
+      } else {
+        setAadharImage(base64);
+      }
+    }
+  };
+
+  const takePhoto = async (type: 'license' | 'aadhar') => {
+    if (!ImagePicker) {
+      Alert.alert('Not Available', 'Camera requires a development build. Please use a dev build to upload documents.');
+      return;
+    }
+
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'Please allow camera access to take photos.');
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      quality: 0.7,
+      base64: true,
+    });
+
+    if (!result.canceled && result.assets[0]) {
+      const base64 = `data:image/jpeg;base64,${result.assets[0].base64}`;
+      if (type === 'license') {
+        setLicenseImage(base64);
+      } else {
+        setAadharImage(base64);
+      }
+    }
+  };
+
+  const showImageOptions = (type: 'license' | 'aadhar') => {
+    if (!ImagePicker) {
+      Alert.alert('Development Build Required', 'Document upload requires a development build (not Expo Go). The upload will work in your production APK.');
+      return;
+    }
+    Alert.alert(
+      type === 'license' ? 'Upload License' : 'Upload Aadhar Card',
+      'Choose an option',
+      [
+        { text: 'Camera', onPress: () => takePhoto(type) },
+        { text: 'Gallery', onPress: () => pickImage(type) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
 
   const validateForm = (): boolean => {
     const newErrors = {
@@ -48,6 +132,7 @@ export default function RegisterScreen() {
       email: '',
       password: '',
       confirmPassword: '',
+      documents: '',
     };
     let isValid = true;
 
@@ -76,6 +161,11 @@ export default function RegisterScreen() {
       isValid = false;
     }
 
+    if (!licenseImage || !aadharImage) {
+      newErrors.documents = 'Both License and Aadhar Card are required';
+      isValid = false;
+    }
+
     setErrors(newErrors);
     return isValid;
   };
@@ -85,13 +175,12 @@ export default function RegisterScreen() {
 
     try {
       clearError();
-      await register(name, phone, email, password, vehicleNumber, vehicleType);
-      Alert.alert('Success', 'Registration successful!', [
-        {
-          text: 'OK',
-          onPress: () => router.replace('/'),
-        },
-      ]);
+      await register(name, phone, email, password, vehicleNumber, vehicleType, licenseImage || undefined, aadharImage || undefined);
+      Alert.alert(
+        'Registration Submitted',
+        'Your account has been created. It will be activated after admin verifies your documents.',
+        [{ text: 'OK', onPress: () => router.replace('/login') }]
+      );
     } catch (err) {
       Alert.alert('Registration Failed', error || 'Please try again');
     }
@@ -163,6 +252,62 @@ export default function RegisterScreen() {
               onChangeText={setVehicleType}
               icon="car-sport-outline"
             />
+
+            {/* Document Upload Section */}
+            <View style={styles.docSection}>
+              <Text style={styles.docSectionTitle}>Documents</Text>
+              <Text style={styles.docSectionSubtitle}>
+                Upload clear photos of your documents for verification
+              </Text>
+
+              {/* License Upload */}
+              <TouchableOpacity
+                style={[styles.uploadBox, licenseImage && styles.uploadBoxDone]}
+                onPress={() => showImageOptions('license')}
+              >
+                {licenseImage ? (
+                  <View style={styles.uploadedContainer}>
+                    <Image source={{ uri: licenseImage }} style={styles.uploadedImage} />
+                    <View style={styles.uploadedBadge}>
+                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      <Text style={styles.uploadedText}>License uploaded</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.uploadPlaceholder}>
+                    <Ionicons name="card-outline" size={32} color="#666" />
+                    <Text style={styles.uploadLabel}>Driving License</Text>
+                    <Text style={styles.uploadHint}>Tap to upload</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Aadhar Upload */}
+              <TouchableOpacity
+                style={[styles.uploadBox, aadharImage && styles.uploadBoxDone]}
+                onPress={() => showImageOptions('aadhar')}
+              >
+                {aadharImage ? (
+                  <View style={styles.uploadedContainer}>
+                    <Image source={{ uri: aadharImage }} style={styles.uploadedImage} />
+                    <View style={styles.uploadedBadge}>
+                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      <Text style={styles.uploadedText}>Aadhar uploaded</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.uploadPlaceholder}>
+                    <Ionicons name="id-card-outline" size={32} color="#666" />
+                    <Text style={styles.uploadLabel}>Aadhar Card</Text>
+                    <Text style={styles.uploadHint}>Tap to upload</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {errors.documents ? (
+                <Text style={styles.docError}>{errors.documents}</Text>
+              ) : null}
+            </View>
 
             <Input
               label="Password"
@@ -250,6 +395,75 @@ const styles = StyleSheet.create({
   },
   registerButton: {
     marginTop: Spacing.md,
+  },
+  // Document upload section
+  docSection: {
+    marginTop: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  docSectionTitle: {
+    fontSize: FontSizes.lg,
+    fontWeight: FontWeights.bold,
+    color: Colors.text,
+    marginBottom: 4,
+  },
+  docSectionSubtitle: {
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+    marginBottom: Spacing.md,
+  },
+  uploadBox: {
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    backgroundColor: '#FAFAFA',
+  },
+  uploadBoxDone: {
+    borderColor: '#10B981',
+    borderStyle: 'solid',
+    backgroundColor: '#F0FDF4',
+  },
+  uploadPlaceholder: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+  },
+  uploadLabel: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+    color: '#333',
+    marginTop: Spacing.sm,
+  },
+  uploadHint: {
+    fontSize: FontSizes.sm,
+    color: '#999',
+    marginTop: 4,
+  },
+  uploadedContainer: {
+    alignItems: 'center',
+  },
+  uploadedImage: {
+    width: '100%',
+    height: 120,
+    borderRadius: BorderRadius.sm,
+    marginBottom: Spacing.sm,
+  },
+  uploadedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  uploadedText: {
+    fontSize: FontSizes.sm,
+    fontWeight: FontWeights.semibold,
+    color: '#10B981',
+  },
+  docError: {
+    fontSize: FontSizes.sm,
+    color: '#EF4444',
+    marginTop: -Spacing.sm,
   },
   footer: {
     flexDirection: 'row',

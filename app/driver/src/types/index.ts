@@ -25,6 +25,8 @@ export interface RegisterData {
   password: string;
   vehicle_number?: string;
   vehicle_type?: string;
+  license_document?: string;
+  aadhar_document?: string;
 }
 
 export interface AuthResponse {

@@ -174,8 +174,8 @@ async def login_driver(driver_data: DriverLogin, db: Session = Depends(get_db)):
 
     if not driver.is_active:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Driver account is inactive"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="ACCOUNT_PENDING_APPROVAL"
         )
 
     access_token = create_access_token(data={"sub": str(driver.id), "role": "driver"})

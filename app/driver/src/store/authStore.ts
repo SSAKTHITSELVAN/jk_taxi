@@ -14,7 +14,7 @@ interface AuthState {
 
   // Actions
   login: (phone: string, password: string) => Promise<void>;
-  register: (name: string, phone: string, email: string, password: string, vehicleNumber?: string, vehicleType?: string) => Promise<void>;
+  register: (name: string, phone: string, email: string, password: string, vehicleNumber?: string, vehicleType?: string, licenseDocument?: string, aadharDocument?: string) => Promise<void>;
   logout: () => Promise<void>;
   loadDriver: () => Promise<void>;
   clearError: () => void;
@@ -67,7 +67,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
   },
 
-  register: async (name: string, phone: string, email: string, password: string, vehicleNumber?: string, vehicleType?: string) => {
+  register: async (name: string, phone: string, email: string, password: string, vehicleNumber?: string, vehicleType?: string, licenseDocument?: string, aadharDocument?: string) => {
     try {
       set({ isLoading: true, error: null });
       const response = await authApi.register({
@@ -77,6 +77,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         password,
         vehicle_number: vehicleNumber,
         vehicle_type: vehicleType,
+        license_document: licenseDocument,
+        aadhar_document: aadharDocument,
       });
 
       // Set token in memory FIRST before profile request
