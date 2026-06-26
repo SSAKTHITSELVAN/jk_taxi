@@ -37,6 +37,7 @@ export default function HomeScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const [activeRide, setActiveRide] = useState<EnhancedRide | null>(null);
+  const [availableRides, setAvailableRides] = useState<EnhancedRide[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -58,7 +59,7 @@ export default function HomeScreen() {
     initLocation();
   }, []);
 
-  // Ride polling - only check for active ride
+  // Ride polling
   useEffect(() => {
     if (isOnline) {
       loadRides();
@@ -66,6 +67,7 @@ export default function HomeScreen() {
       return () => clearInterval(interval);
     } else {
       setActiveRide(null);
+      setAvailableRides([]);
     }
   }, [isOnline]);
 
@@ -245,16 +247,41 @@ export default function HomeScreen() {
   const loadRides = async () => {
     try {
       const active = await driverEnhancedApi.getActiveRide();
-      console.log('✅ [ACTIVE RIDE FOUND]', active.id, 'Status:', active.status);
       setActiveRide(active);
+      setAvailableRides([]);
     } catch (e: any) {
       if (e.response?.status === 404) {
-        console.log('ℹ️  [NO ACTIVE RIDE] Driver has no active rides');
         setActiveRide(null);
+        // No active ride - fetch available rides
+        try {
+          const available = await driverEnhancedApi.getAvailableRides();
+          setAvailableRides(available);
+        } catch {
+          setAvailableRides([]);
+        }
       }
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleAcceptRide = async (rideId: string) => {
+    try {
+      const ride = await driverEnhancedApi.acceptRide(rideId);
+      setActiveRide(ride);
+      setAvailableRides([]);
+    } catch (e: any) {
+      if (e.response?.status === 409) {
+        Alert.alert('Already Taken', 'This ride was accepted by another driver.');
+      } else {
+        Alert.alert('Error', e.response?.data?.detail || 'Failed to accept ride');
+      }
+      loadRides();
+    }
+  };
+
+  const handleRejectRide = (rideId: string) => {
+    setAvailableRides(prev => prev.filter(r => r.id !== rideId));
   };
 
   const handleToggleStatus = async () => {
@@ -733,10 +760,60 @@ export default function HomeScreen() {
         </View>
       )}
 
-      {/* No active ride indicator */}
-      {isOnline && !activeRide && (
+      {/* Available Ride Card - shown when no active ride */}
+      {isOnline && !activeRide && availableRides.length > 0 && (
+        <View style={[styles.rideRequestCard, { bottom: insets.bottom + 16 }]}>
+          <View style={styles.rideRequestHeader}>
+            <View style={styles.rideRequestBadge}>
+              <Ionicons name="car" size={14} color="#FFF" />
+              <Text style={styles.rideRequestBadgeText}>
+                {availableRides[0].distance_km?.toFixed(1)} km • {Math.round(availableRides[0].eta_minutes)} min
+              </Text>
+            </View>
+            <Text style={styles.rideRequestFare}>₹{Math.round(availableRides[0].fare)}</Text>
+          </View>
+
+          <View style={styles.rideLocations}>
+            <View style={styles.rideLocRow}>
+              <View style={[styles.locDot, { backgroundColor: '#10B981' }]} />
+              <Text style={styles.rideLocText} numberOfLines={1}>{String(availableRides[0].pickup_location)}</Text>
+            </View>
+            {availableRides[0].dropoff_location && (
+              <View style={styles.rideLocRow}>
+                <View style={[styles.locDot, { backgroundColor: '#EF4444' }]} />
+                <Text style={styles.rideLocText} numberOfLines={1}>{String(availableRides[0].dropoff_location)}</Text>
+              </View>
+            )}
+          </View>
+
+          <View style={styles.rideRequestMeta}>
+            <Text style={styles.metaText}>{availableRides[0].vehicle_category}</Text>
+            <Text style={styles.metaDot}>•</Text>
+            <Text style={styles.metaText}>{availableRides[0].trip_type?.replace('_', ' ')}</Text>
+            {availableRides.length > 1 && (
+              <>
+                <Text style={styles.metaDot}>•</Text>
+                <Text style={styles.metaText}>{availableRides.length} rides available</Text>
+              </>
+            )}
+          </View>
+
+          <View style={styles.rideRequestActions}>
+            <TouchableOpacity style={styles.rejectBtn} onPress={() => handleRejectRide(availableRides[0].id)}>
+              <Ionicons name="close" size={22} color="#EF4444" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.acceptBtn} onPress={() => handleAcceptRide(availableRides[0].id)}>
+              <Ionicons name="checkmark" size={22} color="#FFF" />
+              <Text style={styles.acceptBtnText}>Accept</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* No rides available indicator */}
+      {isOnline && !activeRide && availableRides.length === 0 && (
         <View style={styles.noRideBadge}>
-          <Text style={styles.noRideText}>Online - No active rides</Text>
+          <Text style={styles.noRideText}>Searching for rides...</Text>
         </View>
       )}
 
@@ -956,6 +1033,24 @@ const styles = StyleSheet.create({
   cancelBtnText: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
 
   // No active ride badge
+  // Available ride request card
+  rideRequestCard: { position: 'absolute', left: 16, right: 16, backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10 },
+  rideRequestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  rideRequestBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
+  rideRequestBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
+  rideRequestFare: { fontSize: 22, fontWeight: '700', color: Colors.primary },
+  rideLocations: { marginBottom: 10 },
+  rideLocRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  locDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
+  rideLocText: { fontSize: 14, color: '#333', flex: 1 },
+  rideRequestMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 4 },
+  metaText: { fontSize: 12, color: '#666', textTransform: 'capitalize' },
+  metaDot: { color: '#CCC' },
+  rideRequestActions: { flexDirection: 'row', gap: 12 },
+  rejectBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EF4444' },
+  acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 14, gap: 6 },
+  acceptBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+
   noRideBadge: { position: 'absolute', bottom: 32, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   noRideText: { fontSize: 14, color: '#666', fontWeight: '600' },
 

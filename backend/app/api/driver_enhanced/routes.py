@@ -75,14 +75,23 @@ async def get_available_rides(
 
     # Check if driver has location
     if not current_driver.current_lat or not current_driver.current_lng:
-        # Return empty list if location not available
         return []
 
-    # Get all pending rides
-    all_pending_rides = db.query(RideEnhanced).filter(
+    # Get ride IDs this driver has already cancelled/rejected (don't show again)
+    cancelled_ride_ids = db.query(RideCancellation.ride_id).filter(
+        RideCancellation.canceller_id == current_driver.id
+    ).all()
+    excluded_ids = [r[0] for r in cancelled_ride_ids]
+
+    # Get all pending rides not previously rejected by this driver
+    query = db.query(RideEnhanced).filter(
         RideEnhanced.status == "pending",
         RideEnhanced.driver_id.is_(None)
-    ).all()
+    )
+    if excluded_ids:
+        query = query.filter(RideEnhanced.id.notin_(excluded_ids))
+
+    all_pending_rides = query.all()
 
     # Filter rides within 30 minutes reach and calculate distance/ETA
     nearby_rides = []
@@ -165,22 +174,24 @@ async def accept_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Accept a ride request"""
-    ride = db.query(RideEnhanced).filter(
-        RideEnhanced.id == ride_id,
-        RideEnhanced.status == "pending"
-    ).first()
-
-    if not ride:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Ride not found or already accepted"
-        )
-
+    """Accept a ride request with row-level lock to prevent race conditions"""
     if not current_driver.is_online:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Driver must be online to accept rides"
+        )
+
+    # SELECT FOR UPDATE - locks the row to prevent race condition
+    ride = db.query(RideEnhanced).filter(
+        RideEnhanced.id == ride_id,
+        RideEnhanced.status == "pending",
+        RideEnhanced.driver_id.is_(None)
+    ).with_for_update().first()
+
+    if not ride:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Ride already accepted by another driver"
         )
 
     ride.driver_id = current_driver.id
@@ -273,7 +284,7 @@ async def complete_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Complete a ride"""
+    """Complete a ride - checks driver is within 500m of dropoff location"""
     ride = db.query(RideEnhanced).filter(
         RideEnhanced.id == ride_id,
         RideEnhanced.driver_id == current_driver.id
@@ -290,6 +301,21 @@ async def complete_ride(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Can only complete rides that are started"
         )
+
+    # Location-based completion check (500m radius)
+    if ride.dropoff_lat and ride.dropoff_lng and current_driver.current_lat and current_driver.current_lng:
+        distance_to_dropoff = calculate_distance(
+            current_driver.current_lat,
+            current_driver.current_lng,
+            ride.dropoff_lat,
+            ride.dropoff_lng
+        )
+        # Must be within 500 meters (0.5 km) of dropoff
+        if distance_to_dropoff > 0.5:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"You are {distance_to_dropoff:.1f} km away from drop-off. Please reach the destination to complete the ride."
+            )
 
     ride.status = "completed"
     ride.payment_status = "completed"
