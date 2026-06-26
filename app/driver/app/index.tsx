@@ -44,6 +44,7 @@ export default function HomeScreen() {
   // Map state
   const [driverLoc, setDriverLoc] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const [routeCoords, setRouteCoords] = useState<number[][] | null>(null);
+  const [routeCongestion, setRouteCongestion] = useState<any>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [userHeading, setUserHeading] = useState(0);
   const [followUser, setFollowUser] = useState(true);
@@ -83,6 +84,7 @@ export default function HomeScreen() {
     } else {
       stopLocationPush();
       setRouteCoords(null);
+      setRouteCongestion(null);
       setRouteInfo(null);
       hasInitializedCameraRef.current = false;
       setFollowUser(true);
@@ -158,8 +160,25 @@ export default function HomeScreen() {
         destLng = activeRide.dropoff_lng || activeRide.pickup_lng;
       }
 
-      // Use Mapbox Navigation API for better routing
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&steps=true&banner_instructions=true&voice_instructions=true&alternatives=false&continue_straight=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      // Build bearing parameter for direction-aware routing
+      // Format: bearing1,tolerance1;bearing2,tolerance2
+      const bearingParam = userHeading > 0
+        ? `&bearings=${userHeading},45;`
+        : '';
+
+      // Mapbox Directions API with Navigation SDK equivalent options:
+      // - Profile: driving-traffic (for congestion data)
+      // - Annotations: congestion_numeric,distance (required for route line coloring)
+      // - Steps: true (for turn-by-turn)
+      // - Overview: full (complete route geometry)
+      // - Geometries: geojson
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/` +
+        `${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}` +
+        `?geometries=geojson&overview=full&steps=true` +
+        `&annotations=congestion_numeric,distance,duration` +
+        `&alternatives=false&continue_straight=true` +
+        `${bearingParam}` +
+        `&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
       const resp = await fetch(url);
       const data = await resp.json();
@@ -172,6 +191,13 @@ export default function HomeScreen() {
           duration: route.duration / 60
         });
 
+        // Build congestion-colored route segments
+        if (route.legs?.[0]?.annotation?.congestion_numeric) {
+          const congestion = route.legs[0].annotation.congestion_numeric;
+          const coords = route.geometry.coordinates;
+          buildCongestionRoute(coords, congestion);
+        }
+
         // Only fit camera once when route is first loaded
         if (cameraRef.current && fitCamera) {
           const coords = route.geometry.coordinates;
@@ -181,18 +207,39 @@ export default function HomeScreen() {
           const ne = [Math.max(...lngs), Math.max(...lats)];
           const sw = [Math.min(...lngs), Math.min(...lats)];
 
-          // Padding: [top, right, bottom, left]
-          const paddingTop = 150;
-          const paddingRight = 80;
-          const paddingBottom = 450; // Space for bottom panel
-          const paddingLeft = 80;
-
-          cameraRef.current.fitBounds(ne, sw, [paddingTop, paddingRight, paddingBottom, paddingLeft], 2000);
+          cameraRef.current.fitBounds(ne, sw, [150, 80, 350, 80], 2000);
         }
       }
     } catch (error) {
       console.log('Error fetching route:', error);
     }
+  };
+
+  // Build a GeoJSON FeatureCollection with congestion color segments
+  const buildCongestionRoute = (coords: number[][], congestion: number[]) => {
+    const features: any[] = [];
+
+    for (let i = 0; i < congestion.length && i < coords.length - 1; i++) {
+      const level = congestion[i];
+      let color = '#4CAF50'; // low/unknown - green
+      if (level >= 80) color = '#D32F2F'; // severe - red
+      else if (level >= 60) color = '#F57C00'; // heavy - orange
+      else if (level >= 40) color = '#FDD835'; // moderate - yellow
+
+      features.push({
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [coords[i], coords[i + 1]],
+        },
+        properties: { color, congestion: level },
+      });
+    }
+
+    setRouteCongestion({
+      type: 'FeatureCollection',
+      features,
+    });
   };
 
   const loadRides = async () => {
@@ -268,6 +315,7 @@ export default function HomeScreen() {
           Alert.alert('Ride Completed!', `Fare: ₹${Math.round(activeRide.fare)}\nGreat job!`);
           setActiveRide(null);
           setRouteCoords(null);
+          setRouteCongestion(null);
           loadRides();
         } catch (e: any) {
           Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
@@ -318,6 +366,7 @@ export default function HomeScreen() {
       setShowCancelModal(false);
       setActiveRide(null);
       setRouteCoords(null);
+      setRouteCongestion(null);
       setRouteInfo(null);
 
       Alert.alert('Ride Cancelled', 'The ride has been cancelled successfully.');
@@ -332,6 +381,7 @@ export default function HomeScreen() {
         setShowCancelModal(false);
         setActiveRide(null);
         setRouteCoords(null);
+        setRouteCongestion(null);
         setRouteInfo(null);
         Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
         setTimeout(() => loadRides(), 500);
@@ -425,7 +475,7 @@ export default function HomeScreen() {
           puckBearing="course"
         />
 
-        {/* Route Line - Casing (white border) */}
+        {/* Route Line - White Casing (outermost border like MapboxRouteLineView) */}
         {routeGeoJSON && (
           <Mapbox.ShapeSource id="routeCasing" shape={routeGeoJSON}>
             <Mapbox.LineLayer
@@ -441,8 +491,21 @@ export default function HomeScreen() {
           </Mapbox.ShapeSource>
         )}
 
-        {/* Route Line - Main (blue) */}
-        {routeGeoJSON && (
+        {/* Route Line - Congestion colored (like MapboxRouteLineApi with congestion_numeric) */}
+        {routeCongestion ? (
+          <Mapbox.ShapeSource id="routeCongestion" shape={routeCongestion}>
+            <Mapbox.LineLayer
+              id="routeCongestionLine"
+              style={{
+                lineColor: ['get', 'color'],
+                lineWidth: 8,
+                lineOpacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        ) : routeGeoJSON ? (
           <Mapbox.ShapeSource id="driverRoute" shape={routeGeoJSON}>
             <Mapbox.LineLayer
               id="driverRouteLine"
@@ -455,9 +518,9 @@ export default function HomeScreen() {
               }}
             />
           </Mapbox.ShapeSource>
-        )}
+        ) : null}
 
-        {/* Route Arrows - directional triangles along route */}
+        {/* Route Arrows - directional maneuver arrows (like Route Arrow API) */}
         {routeArrowsGeoJSON && (
           <Mapbox.ShapeSource id="routeArrows" shape={routeArrowsGeoJSON}>
             <Mapbox.SymbolLayer
@@ -470,7 +533,7 @@ export default function HomeScreen() {
                 iconAllowOverlap: true,
                 iconIgnorePlacement: true,
                 iconPitchAlignment: 'map',
-                iconOpacity: 0.9,
+                iconOpacity: 0.8,
               }}
             />
           </Mapbox.ShapeSource>

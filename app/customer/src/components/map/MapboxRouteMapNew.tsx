@@ -32,6 +32,7 @@ interface RouteData {
   coordinates: number[][];
   distance: number;
   duration: number;
+  congestion?: any;
 }
 
 /**
@@ -72,39 +73,52 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
 
   const fetchRoute = async () => {
     try {
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      // Use driving-traffic with congestion annotations (like Navigation SDK RouteOptions)
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/` +
+        `${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}` +
+        `?geometries=geojson&overview=full&steps=true` +
+        `&annotations=congestion_numeric,distance,duration` +
+        `&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
       const response = await fetch(url);
       const data = await response.json();
 
-      // Check for API errors
       if (data.message) {
         console.error('Mapbox Route API Error:', data.message);
-        Alert.alert(
-          'Route Calculation Error',
-          `Failed to calculate route.\n\nMapbox API Error: ${data.message}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
-          [{ text: 'OK' }]
-        );
         return;
       }
 
-      if (!response.ok) {
-        Alert.alert(
-          'Route Calculation Error',
-          `Failed to calculate route.\n\nHTTP Status: ${response.status}\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
-          [{ text: 'OK' }]
-        );
-        return;
-      }
+      if (!response.ok) return;
 
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
         const coordinates = route.geometry.coordinates;
 
+        // Build congestion-colored segments
+        let congestionGeoJSON = null;
+        if (route.legs?.[0]?.annotation?.congestion_numeric) {
+          const congestion = route.legs[0].annotation.congestion_numeric;
+          const features: any[] = [];
+          for (let i = 0; i < congestion.length && i < coordinates.length - 1; i++) {
+            const level = congestion[i];
+            let color = '#4CAF50';
+            if (level >= 80) color = '#D32F2F';
+            else if (level >= 60) color = '#F57C00';
+            else if (level >= 40) color = '#FDD835';
+            features.push({
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: [coordinates[i], coordinates[i + 1]] },
+              properties: { color, congestion: level },
+            });
+          }
+          congestionGeoJSON = { type: 'FeatureCollection', features };
+        }
+
         setRouteData({
           coordinates,
           distance: route.distance,
           duration: route.duration,
+          congestion: congestionGeoJSON,
         });
 
         if (onRouteReady) {
@@ -113,11 +127,6 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
       }
     } catch (error) {
       console.error('Error fetching route:', error);
-      Alert.alert(
-        'Route Calculation Error',
-        `Failed to calculate route.\n\nError: ${error instanceof Error ? error.message : 'Unknown error'}\n\nToken preview: ${MAPBOX_ACCESS_TOKEN.substring(0, 20)}...`,
-        [{ text: 'OK' }]
-      );
     }
   };
 
@@ -136,7 +145,7 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
     <View style={styles.container}>
       <Mapbox.MapView
         style={styles.map}
-        styleURL={MAP_STYLES.STREETS}
+        styleURL="mapbox://styles/mapbox/navigation-day-v1"
         compassEnabled
         attributionEnabled={false}
         logoEnabled={false}
@@ -170,20 +179,49 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
           </View>
         </Mapbox.PointAnnotation>
 
-        {/* Route line */}
+        {/* Route casing (white border) */}
         {routeGeoJSON && (
-          <Mapbox.ShapeSource id="routeSource" shape={routeGeoJSON}>
+          <Mapbox.ShapeSource id="routeCasing" shape={routeGeoJSON}>
             <Mapbox.LineLayer
-              id="routeLine"
+              id="routeCasingLine"
               style={{
-                lineColor: Colors.primary,
-                lineWidth: 5,
+                lineColor: '#ffffff',
+                lineWidth: 10,
+                lineOpacity: 1,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
             />
           </Mapbox.ShapeSource>
         )}
+
+        {/* Route line - congestion colored (like MapboxRouteLineApi) */}
+        {routeData?.congestion ? (
+          <Mapbox.ShapeSource id="routeCongestion" shape={routeData.congestion}>
+            <Mapbox.LineLayer
+              id="routeCongestionLine"
+              style={{
+                lineColor: ['get', 'color'],
+                lineWidth: 6,
+                lineOpacity: 1,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        ) : routeGeoJSON ? (
+          <Mapbox.ShapeSource id="routeSource" shape={routeGeoJSON}>
+            <Mapbox.LineLayer
+              id="routeLine"
+              style={{
+                lineColor: Colors.primary,
+                lineWidth: 6,
+                lineCap: 'round',
+                lineJoin: 'round',
+              }}
+            />
+          </Mapbox.ShapeSource>
+        ) : null}
       </Mapbox.MapView>
 
       {/* Route info overlay */}
