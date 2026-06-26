@@ -52,6 +52,7 @@ export default function HomeScreen() {
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const routeUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInitializedCameraRef = useRef(false);
+  const rejectedRideIdsRef = useRef<Set<string>>(new Set());
 
   // Initialize location and fetch current online status from server
   useEffect(() => {
@@ -196,10 +197,11 @@ export default function HomeScreen() {
     } catch (e: any) {
       if (e.response?.status === 404) {
         setActiveRide(null);
-        // No active ride - fetch available rides
+        // No active ride - fetch available rides (exclude locally rejected ones)
         try {
           const available = await driverEnhancedApi.getAvailableRides();
-          setAvailableRides(available);
+          const filtered = available.filter((r: any) => !rejectedRideIdsRef.current.has(r.id));
+          setAvailableRides(filtered);
         } catch {
           setAvailableRides([]);
         }
@@ -224,8 +226,17 @@ export default function HomeScreen() {
     }
   };
 
-  const handleRejectRide = (rideId: string) => {
+  const handleRejectRide = async (rideId: string) => {
+    // Track locally so it doesn't reappear on next poll
+    rejectedRideIdsRef.current.add(rideId);
     setAvailableRides(prev => prev.filter(r => r.id !== rideId));
+
+    // Tell backend so it won't show this ride to this driver again
+    try {
+      await driverEnhancedApi.declineRide(rideId);
+    } catch {
+      // Ignore errors - local tracking is enough
+    }
   };
 
   const handleToggleStatus = async () => {

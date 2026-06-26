@@ -511,3 +511,24 @@ async def reject_ride(
         "rejection_count": ride.rejection_count,
         "ride_id": str(ride.id)
     }
+
+
+@router.post("/rides/{ride_id}/decline")
+async def decline_ride(
+    ride_id: UUID,
+    current_driver: Driver = Depends(get_current_driver),
+    db: Session = Depends(get_db)
+):
+    """Decline a pending ride - records that this driver doesn't want it.
+    The ride stays pending for other drivers."""
+    # Record decline so this driver won't see it again
+    cancellation = RideCancellation(
+        ride_id=ride_id,
+        cancelled_by="driver",
+        canceller_id=current_driver.id,
+        reason="driver_declined",
+    )
+    db.add(cancellation)
+    db.commit()
+
+    return {"message": "Ride declined"}

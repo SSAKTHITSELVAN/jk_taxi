@@ -44,10 +44,18 @@ export const driverEnhancedApi = {
     return response.data;
   },
 
-  // Reject ride
+  // Reject ride (assigned ride)
   rejectRide: async (rideId: string): Promise<{ message: string }> => {
     const response = await apiClient.post<{ message: string }>(
       `/api/v2/driver/rides/${rideId}/reject`
+    );
+    return response.data;
+  },
+
+  // Decline ride (pending ride - not interested)
+  declineRide: async (rideId: string): Promise<{ message: string }> => {
+    const response = await apiClient.post<{ message: string }>(
+      `/api/v2/driver/rides/${rideId}/decline`
     );
     return response.data;
   },
