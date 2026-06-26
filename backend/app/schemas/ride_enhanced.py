@@ -179,6 +179,10 @@ class RideEnhancedResponse(BaseModel):
     distance_km: float
     eta_minutes: int
 
+    # Customer info (populated for driver-facing responses)
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+
     # Driver info (populated when driver accepts)
     driver_name: Optional[str] = None
     driver_phone: Optional[str] = None

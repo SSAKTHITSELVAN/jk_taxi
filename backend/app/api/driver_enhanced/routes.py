@@ -9,6 +9,7 @@ from app.core.dependencies import get_db, get_current_driver
 from app.schemas.ride_enhanced import RideEnhancedResponse, VerifyOTPRequest
 from app.models.ride_enhanced import RideEnhanced
 from app.models.driver import Driver
+from app.models.user import User
 from app.models.ride_cancellation import RideCancellation
 
 router = APIRouter()
@@ -374,12 +375,12 @@ async def cancel_ride(
     }
 
 
-@router.get("/rides/active", response_model=RideEnhancedResponse)
+@router.get("/rides/active")
 async def get_active_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Get driver's active ride"""
+    """Get driver's active ride with customer info"""
     active_ride = db.query(RideEnhanced).filter(
         RideEnhanced.driver_id == current_driver.id,
         RideEnhanced.status.in_(["accepted", "started"])
@@ -391,7 +392,14 @@ async def get_active_ride(
             detail="No active ride found"
         )
 
-    return active_ride
+    # Enrich with customer info
+    customer = db.query(User).filter(User.id == active_ride.user_id).first()
+    response = RideEnhancedResponse.model_validate(active_ride)
+    if customer:
+        response.customer_name = customer.name
+        response.customer_phone = customer.phone
+
+    return response
 
 
 @router.get("/rides/history", response_model=List[RideEnhancedResponse])
@@ -408,25 +416,51 @@ async def get_driver_ride_history(
     return rides
 
 
-@router.get("/earnings", response_model=dict)
+@router.get("/earnings")
 async def get_driver_earnings(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Get driver's earnings"""
-    completed_rides = db.query(RideEnhanced).filter(
+    """Get driver's earnings breakdown - today, weekly, monthly, total"""
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=now.weekday())
+    month_start = today_start.replace(day=1)
+
+    all_completed = db.query(RideEnhanced).filter(
         RideEnhanced.driver_id == current_driver.id,
         RideEnhanced.status == "completed"
     ).all()
 
-    total_earnings = sum(ride.fare for ride in completed_rides)
-    total_rides = len(completed_rides)
-    average_fare = total_earnings / total_rides if total_rides > 0 else 0
+    today_rides = [r for r in all_completed if r.created_at and r.created_at.replace(tzinfo=None) >= today_start]
+    week_rides = [r for r in all_completed if r.created_at and r.created_at.replace(tzinfo=None) >= week_start]
+    month_rides = [r for r in all_completed if r.created_at and r.created_at.replace(tzinfo=None) >= month_start]
+
+    total_earnings = sum(r.fare for r in all_completed)
+    today_earnings = sum(r.fare for r in today_rides)
+    week_earnings = sum(r.fare for r in week_rides)
+    month_earnings = sum(r.fare for r in month_rides)
 
     return {
-        "total_earnings": round(total_earnings, 2),
-        "total_rides": total_rides,
-        "average_fare": round(average_fare, 2)
+        "today": {
+            "earnings": round(today_earnings, 2),
+            "rides": len(today_rides),
+        },
+        "week": {
+            "earnings": round(week_earnings, 2),
+            "rides": len(week_rides),
+        },
+        "month": {
+            "earnings": round(month_earnings, 2),
+            "rides": len(month_rides),
+        },
+        "total": {
+            "earnings": round(total_earnings, 2),
+            "rides": len(all_completed),
+            "average_fare": round(total_earnings / len(all_completed), 2) if all_completed else 0,
+        },
     }
 
 

@@ -364,7 +364,7 @@ export default function HomeScreen() {
 
   const handleCallCustomer = () => {
     if (!activeRide) return;
-    const phoneNumber = activeRide.customer?.phone || activeRide.passenger_phone || '';
+    const phoneNumber = (activeRide as any).customer_phone || activeRide.customer?.phone || activeRide.passenger_phone || '';
     if (!phoneNumber) {
       Alert.alert('Error', 'Customer phone number not available');
       return;
@@ -694,7 +694,7 @@ export default function HomeScreen() {
                   <Text style={styles.customerName}>
                     {activeRide.booking_for_self === false && activeRide.passenger_name
                       ? activeRide.passenger_name
-                      : activeRide.customer?.name || 'Customer'}
+                      : (activeRide as any).customer_name || activeRide.customer?.name || 'Customer'}
                   </Text>
                   <Text style={styles.customerMeta}>
                     {activeRide.payment_method === 'cash' ? 'Cash' : 'Online'} • ₹{Math.round(activeRide.fare)}

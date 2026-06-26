@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard';
 import Users from './pages/Users';
 import Drivers from './pages/Drivers';
 import Rides from './pages/Rides';
+import DriverEarnings from './pages/DriverEarnings';
 import Layout from './components/Layout';
 import './App.css';
 
@@ -56,6 +57,7 @@ function App() {
                   <Route path="/users" element={<Users />} />
                   <Route path="/drivers" element={<Drivers />} />
                   <Route path="/rides" element={<Rides />} />
+                  <Route path="/earnings" element={<DriverEarnings />} />
                 </Routes>
               </Layout>
             ) : (

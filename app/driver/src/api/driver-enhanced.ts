@@ -91,11 +91,12 @@ export const driverEnhancedApi = {
     return response.data;
   },
 
-  // Get earnings
+  // Get earnings breakdown
   getEarnings: async (): Promise<{
-    total_earnings: number;
-    total_rides: number;
-    average_fare: number;
+    today: { earnings: number; rides: number };
+    week: { earnings: number; rides: number };
+    month: { earnings: number; rides: number };
+    total: { earnings: number; rides: number; average_fare: number };
   }> => {
     const response = await apiClient.get('/api/v2/driver/earnings');
     return response.data;

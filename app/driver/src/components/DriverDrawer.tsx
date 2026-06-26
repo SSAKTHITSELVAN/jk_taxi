@@ -134,11 +134,17 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({ isOpen, onClose, isO
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>OTHER</Text>
 
-            <TouchableOpacity style={styles.menuItem}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                onClose();
+                router.push('/wallet');
+              }}
+            >
               <View style={styles.menuItemIconContainer}>
                 <Ionicons name="wallet" size={24} color={Colors.primary} />
               </View>
-              <Text style={styles.menuItemText}>Earnings</Text>
+              <Text style={styles.menuItemText}>Wallet & Earnings</Text>
               <Ionicons name="chevron-forward" size={20} color="#999" />
             </TouchableOpacity>
 

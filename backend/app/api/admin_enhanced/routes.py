@@ -11,6 +11,7 @@ from uuid import UUID
 
 from app.core.dependencies import get_db, get_current_user
 from app.models.user import User
+from app.models.driver import Driver
 from app.models.ride_enhanced import RideEnhanced
 from app.models.vehicle_category import VehicleCategoryConfig
 from app.schemas.ride_enhanced import (
@@ -438,3 +439,41 @@ async def get_revenue_forecast(
             "estimated_rides": round(avg_daily_rides * 30)
         }
     }
+
+
+@router.get("/drivers/earnings")
+async def get_all_drivers_earnings(
+    db: Session = Depends(get_db)
+):
+    """Get earnings for all drivers - admin view"""
+    drivers = db.query(Driver).filter(Driver.is_active == True).all()
+
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = today_start - timedelta(days=now.weekday())
+    month_start = today_start.replace(day=1)
+
+    results = []
+    for driver in drivers:
+        completed = db.query(RideEnhanced).filter(
+            RideEnhanced.driver_id == driver.id,
+            RideEnhanced.status == "completed"
+        ).all()
+
+        today_rides = [r for r in completed if r.created_at and r.created_at.replace(tzinfo=None) >= today_start]
+        week_rides = [r for r in completed if r.created_at and r.created_at.replace(tzinfo=None) >= week_start]
+        month_rides = [r for r in completed if r.created_at and r.created_at.replace(tzinfo=None) >= month_start]
+
+        results.append({
+            "driver_id": str(driver.id),
+            "name": driver.name,
+            "phone": driver.phone,
+            "is_online": driver.is_online,
+            "today": {"earnings": round(sum(r.fare for r in today_rides), 2), "rides": len(today_rides)},
+            "week": {"earnings": round(sum(r.fare for r in week_rides), 2), "rides": len(week_rides)},
+            "month": {"earnings": round(sum(r.fare for r in month_rides), 2), "rides": len(month_rides)},
+            "total": {"earnings": round(sum(r.fare for r in completed), 2), "rides": len(completed)},
+        })
+
+    results.sort(key=lambda x: x["month"]["earnings"], reverse=True)
+    return results
