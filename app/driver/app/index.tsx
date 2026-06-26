@@ -45,7 +45,6 @@ export default function HomeScreen() {
   // Map state
   const [driverLoc, setDriverLoc] = useState({ latitude: 12.9716, longitude: 77.5946 });
   const [routeCoords, setRouteCoords] = useState<number[][] | null>(null);
-  const [routeCongestion, setRouteCongestion] = useState<any>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [userHeading, setUserHeading] = useState(0);
   const [followUser, setFollowUser] = useState(true);
@@ -86,7 +85,6 @@ export default function HomeScreen() {
     } else {
       stopLocationPush();
       setRouteCoords(null);
-      setRouteCongestion(null);
       setRouteInfo(null);
       hasInitializedCameraRef.current = false;
       setFollowUser(true);
@@ -162,25 +160,7 @@ export default function HomeScreen() {
         destLng = activeRide.dropoff_lng || activeRide.pickup_lng;
       }
 
-      // Build bearing parameter for direction-aware routing
-      // Format: bearing1,tolerance1;bearing2,tolerance2
-      const bearingParam = userHeading > 0
-        ? `&bearings=${userHeading},45;`
-        : '';
-
-      // Mapbox Directions API with Navigation SDK equivalent options:
-      // - Profile: driving-traffic (for congestion data)
-      // - Annotations: congestion_numeric,distance (required for route line coloring)
-      // - Steps: true (for turn-by-turn)
-      // - Overview: full (complete route geometry)
-      // - Geometries: geojson
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/` +
-        `${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}` +
-        `?geometries=geojson&overview=full&steps=true` +
-        `&annotations=congestion_numeric,distance,duration` +
-        `&alternatives=false&continue_straight=true` +
-        `${bearingParam}` +
-        `&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
       const resp = await fetch(url);
       const data = await resp.json();
@@ -193,55 +173,18 @@ export default function HomeScreen() {
           duration: route.duration / 60
         });
 
-        // Build congestion-colored route segments
-        if (route.legs?.[0]?.annotation?.congestion_numeric) {
-          const congestion = route.legs[0].annotation.congestion_numeric;
-          const coords = route.geometry.coordinates;
-          buildCongestionRoute(coords, congestion);
-        }
-
-        // Only fit camera once when route is first loaded
         if (cameraRef.current && fitCamera) {
           const coords = route.geometry.coordinates;
           const lngs = coords.map((c: number[]) => c[0]);
           const lats = coords.map((c: number[]) => c[1]);
-
           const ne = [Math.max(...lngs), Math.max(...lats)];
           const sw = [Math.min(...lngs), Math.min(...lats)];
-
-          cameraRef.current.fitBounds(ne, sw, [150, 80, 350, 80], 2000);
+          cameraRef.current.fitBounds(ne, sw, [100, 60, 300, 60], 1500);
         }
       }
     } catch (error) {
       console.log('Error fetching route:', error);
     }
-  };
-
-  // Build a GeoJSON FeatureCollection with congestion color segments
-  const buildCongestionRoute = (coords: number[][], congestion: number[]) => {
-    const features: any[] = [];
-
-    for (let i = 0; i < congestion.length && i < coords.length - 1; i++) {
-      const level = congestion[i];
-      let color = '#4CAF50'; // low/unknown - green
-      if (level >= 80) color = '#D32F2F'; // severe - red
-      else if (level >= 60) color = '#F57C00'; // heavy - orange
-      else if (level >= 40) color = '#FDD835'; // moderate - yellow
-
-      features.push({
-        type: 'Feature',
-        geometry: {
-          type: 'LineString',
-          coordinates: [coords[i], coords[i + 1]],
-        },
-        properties: { color, congestion: level },
-      });
-    }
-
-    setRouteCongestion({
-      type: 'FeatureCollection',
-      features,
-    });
   };
 
   const loadRides = async () => {
@@ -342,7 +285,6 @@ export default function HomeScreen() {
           Alert.alert('Ride Completed!', `Fare: ₹${Math.round(activeRide.fare)}\nGreat job!`);
           setActiveRide(null);
           setRouteCoords(null);
-          setRouteCongestion(null);
           loadRides();
         } catch (e: any) {
           Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
@@ -393,7 +335,6 @@ export default function HomeScreen() {
       setShowCancelModal(false);
       setActiveRide(null);
       setRouteCoords(null);
-      setRouteCongestion(null);
       setRouteInfo(null);
 
       Alert.alert('Ride Cancelled', 'The ride has been cancelled successfully.');
@@ -408,7 +349,6 @@ export default function HomeScreen() {
         setShowCancelModal(false);
         setActiveRide(null);
         setRouteCoords(null);
-        setRouteCongestion(null);
         setRouteInfo(null);
         Alert.alert('Ride Cancelled', 'The ride has been cancelled.');
         setTimeout(() => loadRides(), 500);
@@ -424,23 +364,6 @@ export default function HomeScreen() {
     type: 'Feature' as const,
     geometry: { type: 'LineString' as const, coordinates: routeCoords },
     properties: {},
-  } : null;
-
-  // Build route arrows GeoJSON (arrows along route every ~100 coords)
-  const routeArrowsGeoJSON = routeCoords && routeCoords.length > 4 ? {
-    type: 'FeatureCollection' as const,
-    features: routeCoords
-      .filter((_: number[], i: number) => i > 0 && i % Math.max(1, Math.floor(routeCoords.length / 15)) === 0 && i < routeCoords.length - 1)
-      .map((coord: number[], idx: number) => {
-        const prevIdx = Math.max(0, routeCoords.indexOf(coord) - 3);
-        const prev = routeCoords[prevIdx];
-        const bearing = Math.atan2(coord[0] - prev[0], coord[1] - prev[1]) * (180 / Math.PI);
-        return {
-          type: 'Feature' as const,
-          geometry: { type: 'Point' as const, coordinates: coord },
-          properties: { bearing },
-        };
-      }),
   } : null;
 
   // Overview handler: show full route
@@ -470,47 +393,40 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Full screen Mapbox Navigation Map */}
+      {/* Map - Google Maps style */}
       <Mapbox.MapView
         style={styles.map}
-        styleURL="mapbox://styles/mapbox/navigation-day-v1"
+        styleURL="mapbox://styles/mapbox/streets-v12"
         compassEnabled={false}
         attributionEnabled={false}
         logoEnabled={false}
-        pitchEnabled={true}
-        rotateEnabled={true}
         onTouchStart={() => setFollowUser(false)}
       >
-        {/* Camera - follows driver in navigation mode */}
         <Mapbox.Camera
           ref={cameraRef}
           zoomLevel={16}
           centerCoordinate={[driverLoc.longitude, driverLoc.latitude]}
-          animationDuration={1000}
-          pitch={followUser && activeRide ? 60 : 0}
-          heading={followUser && activeRide ? userHeading : 0}
+          animationDuration={800}
           followUserLocation={followUser}
           followUserMode={followUser && activeRide ? "course" : "normal"}
-          followZoomLevel={16}
-          followPitch={followUser && activeRide ? 60 : 0}
+          followZoomLevel={followUser && activeRide ? 17 : 15}
+          followPitch={followUser && activeRide ? 50 : 0}
         />
 
-        {/* Driver Location Puck with bearing arrow */}
+        {/* Blue dot with direction arrow */}
         <Mapbox.LocationPuck
-          pulsing={{ isEnabled: true, color: '#4688F1', radius: 50 }}
           puckBearingEnabled
           puckBearing="course"
         />
 
-        {/* Route Line - White Casing (outermost border like MapboxRouteLineView) */}
+        {/* Route - blue line like Google Maps */}
         {routeGeoJSON && (
-          <Mapbox.ShapeSource id="routeCasing" shape={routeGeoJSON}>
+          <Mapbox.ShapeSource id="routeSource" shape={routeGeoJSON}>
             <Mapbox.LineLayer
-              id="routeCasingLine"
+              id="routeLine"
               style={{
-                lineColor: '#ffffff',
-                lineWidth: 12,
-                lineOpacity: 1,
+                lineColor: '#4285F4',
+                lineWidth: 6,
                 lineCap: 'round',
                 lineJoin: 'round',
               }}
@@ -518,78 +434,26 @@ export default function HomeScreen() {
           </Mapbox.ShapeSource>
         )}
 
-        {/* Route Line - Congestion colored (like MapboxRouteLineApi with congestion_numeric) */}
-        {routeCongestion ? (
-          <Mapbox.ShapeSource id="routeCongestion" shape={routeCongestion}>
-            <Mapbox.LineLayer
-              id="routeCongestionLine"
-              style={{
-                lineColor: ['get', 'color'],
-                lineWidth: 8,
-                lineOpacity: 1,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </Mapbox.ShapeSource>
-        ) : routeGeoJSON ? (
-          <Mapbox.ShapeSource id="driverRoute" shape={routeGeoJSON}>
-            <Mapbox.LineLayer
-              id="driverRouteLine"
-              style={{
-                lineColor: '#4A89F3',
-                lineWidth: 8,
-                lineOpacity: 1,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </Mapbox.ShapeSource>
-        ) : null}
-
-        {/* Route Arrows - directional maneuver arrows (like Route Arrow API) */}
-        {routeArrowsGeoJSON && (
-          <Mapbox.ShapeSource id="routeArrows" shape={routeArrowsGeoJSON}>
-            <Mapbox.SymbolLayer
-              id="routeArrowSymbols"
-              style={{
-                iconImage: 'oneway',
-                iconSize: 0.7,
-                iconRotate: ['get', 'bearing'],
-                iconRotationAlignment: 'map',
-                iconAllowOverlap: true,
-                iconIgnorePlacement: true,
-                iconPitchAlignment: 'map',
-                iconOpacity: 0.8,
-              }}
-            />
-          </Mapbox.ShapeSource>
-        )}
-
-        {/* Destination Marker - Pickup (green) */}
+        {/* Pickup marker */}
         {activeRide && activeRide.status === 'accepted' && (
           <Mapbox.PointAnnotation
             id="pickupPin"
             coordinate={[activeRide.pickup_lng, activeRide.pickup_lat]}
           >
-            <View style={styles.destinationPin}>
-              <View style={styles.destinationPinInner}>
-                <Ionicons name="person" size={16} color="#fff" />
-              </View>
+            <View style={styles.gmapPin}>
+              <View style={[styles.gmapPinDot, { backgroundColor: '#0F9D58' }]} />
             </View>
           </Mapbox.PointAnnotation>
         )}
 
-        {/* Destination Marker - Dropoff (red) */}
+        {/* Dropoff marker */}
         {activeRide && activeRide.status === 'started' && activeRide.dropoff_lat && activeRide.dropoff_lng && (
           <Mapbox.PointAnnotation
             id="dropoffPin"
             coordinate={[activeRide.dropoff_lng, activeRide.dropoff_lat]}
           >
-            <View style={[styles.destinationPin, { backgroundColor: '#EF4444' }]}>
-              <View style={[styles.destinationPinInner, { backgroundColor: '#DC2626' }]}>
-                <Ionicons name="flag" size={16} color="#fff" />
-              </View>
+            <View style={styles.gmapPin}>
+              <View style={[styles.gmapPinDot, { backgroundColor: '#EA4335' }]} />
             </View>
           </Mapbox.PointAnnotation>
         )}
@@ -869,29 +733,22 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
 
-  // Destination pin marker
-  destinationPin: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#10B981',
+  // Google Maps style pin
+  gmapPin: {
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 6,
   },
-  destinationPinInner: {
-    width: 30,
-    height: 30,
-    borderRadius: 15,
-    backgroundColor: '#059669',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#ffffff',
+  gmapPinDot: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+    elevation: 4,
   },
 
   // Hamburger button - top left
