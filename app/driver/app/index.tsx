@@ -31,7 +31,7 @@ const { width } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const { driver, logout } = useAuthStore();
-  const { isOnline, toggleStatus, isUpdating } = useStatusStore();
+  const { isOnline, toggleStatus, isUpdating, fetchCurrentStatus } = useStatusStore();
   const insets = useSafeAreaInsets();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -53,9 +53,10 @@ export default function HomeScreen() {
   const routeUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasInitializedCameraRef = useRef(false);
 
-  // Initialize location
+  // Initialize location and fetch current online status from server
   useEffect(() => {
     initLocation();
+    fetchCurrentStatus();
   }, []);
 
   // Ride polling

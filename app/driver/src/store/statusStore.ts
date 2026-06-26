@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { ridesApi } from '../api/rides';
+import apiClient from '../api/client';
 
 interface StatusState {
   isOnline: boolean;
@@ -9,12 +10,23 @@ interface StatusState {
   // Actions
   toggleStatus: () => Promise<void>;
   setOnlineStatus: (status: boolean) => Promise<void>;
+  fetchCurrentStatus: () => Promise<void>;
 }
 
 export const useStatusStore = create<StatusState>((set, get) => ({
   isOnline: false,
   isUpdating: false,
   error: null,
+
+  fetchCurrentStatus: async () => {
+    try {
+      const response = await apiClient.get('/api/driver/profile');
+      const driver = response.data;
+      set({ isOnline: driver.is_online });
+    } catch (error) {
+      // If can't fetch, keep current state
+    }
+  },
 
   toggleStatus: async () => {
     const newStatus = !get().isOnline;
