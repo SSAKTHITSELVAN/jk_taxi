@@ -40,7 +40,6 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
   const cameraRef = useRef<Mapbox.Camera>(null);
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFallbackRoute, setIsFallbackRoute] = useState(false);
 
   useEffect(() => {
     if (showRoute) {
@@ -78,99 +77,28 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
     try {
       const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      const response = await fetch(url);
+      const data = await response.json();
 
-      try {
-        const response = await fetch(url, { signal: controller.signal });
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (data.routes && data.routes.length > 0) {
-          const route = data.routes[0];
-          const coordinates = route.geometry.coordinates;
-
-          setRouteData({
-            coordinates,
-            distance: route.distance,
-            duration: route.duration,
-          });
-
-          if (onRouteReady) {
-            onRouteReady(route.distance / 1000, route.duration / 60);
-          }
-        }
-      } catch (fetchError) {
-        clearTimeout(timeoutId);
-        // Use fallback route if API fails
-        console.warn('Mapbox API unavailable, using straight-line route:', fetchError);
-        const distance = calculateStraightLineDistance(
-          pickup.latitude,
-          pickup.longitude,
-          dropoff.latitude,
-          dropoff.longitude
-        );
-        const coordinates = generateStraightLineRoute(pickup, dropoff);
-        const estimatedDuration = (distance / 1000 / 40) * 3600; // 40 km/h average
+      if (data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates;
 
         setRouteData({
           coordinates,
-          distance,
-          duration: estimatedDuration,
+          distance: route.distance,
+          duration: route.duration,
         });
 
-        setIsFallbackRoute(true);
-
         if (onRouteReady) {
-          onRouteReady(distance / 1000, estimatedDuration / 60);
+          onRouteReady(route.distance / 1000, route.duration / 60);
         }
       }
     } catch (error) {
-      console.error('Error in fetchRoute:', error);
+      console.error('Error fetching route:', error);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  // Haversine formula for distance calculation
-  const calculateStraightLineDistance = (
-    lat1: number,
-    lon1: number,
-    lat2: number,
-    lon2: number
-  ): number => {
-    const R = 6371000; // Earth's radius in meters
-    const dLat = ((lat2 - lat1) * Math.PI) / 180;
-    const dLon = ((lon2 - lon1) * Math.PI) / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos((lat1 * Math.PI) / 180) *
-        Math.cos((lat2 * Math.PI) / 180) *
-        Math.sin(dLon / 2) *
-        Math.sin(dLon / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  // Generate straight-line coordinates
-  const generateStraightLineRoute = (origin: typeof pickup, destination: typeof dropoff) => {
-    const coordinates: [number, number][] = [];
-    const steps = 20;
-
-    for (let i = 0; i <= steps; i++) {
-      const t = i / steps;
-      coordinates.push([
-        origin.longitude + (destination.longitude - origin.longitude) * t,
-        origin.latitude + (destination.latitude - origin.latitude) * t,
-      ]);
-    }
-
-    return coordinates;
   };
 
   const routeGeoJSON = routeData
@@ -250,16 +178,10 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
 
       {/* Route info overlay */}
       {routeData && (
-        <View style={[styles.routeInfoContainer, isFallbackRoute && styles.fallbackRouteContainer]}>
+        <View style={styles.routeInfoContainer}>
           <Text style={styles.routeInfoText}>
-            {isFallbackRoute ? '⚠️ ' : '📍 '}
-            {(routeData.distance / 1000).toFixed(1)} km • ⏱️ {Math.round(routeData.duration / 60)} min
+            📍 {(routeData.distance / 1000).toFixed(1)} km • ⏱️ {Math.round(routeData.duration / 60)} min
           </Text>
-          {isFallbackRoute && (
-            <Text style={styles.fallbackWarningText}>
-              (Approximate route - Service unavailable)
-            </Text>
-          )}
         </View>
       )}
 
@@ -343,15 +265,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-  },
-  fallbackRouteContainer: {
-    borderColor: '#FFA500', // Orange for warning
-  },
-  fallbackWarningText: {
-    fontSize: FontSizes.xs,
-    fontWeight: FontWeights.normal,
-    color: '#FFA500',
-    textAlign: 'center',
-    marginTop: Spacing.xs,
   },
 });
