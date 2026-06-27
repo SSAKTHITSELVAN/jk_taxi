@@ -13,7 +13,8 @@
       },
       "env": {
         "MAPBOX_DOWNLOADS_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN"
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
+        "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN": "@MAPBOX_PUBLIC_TOKEN"
       }
     },
     "preview": {
@@ -23,17 +24,20 @@
       },
       "env": {
         "MAPBOX_DOWNLOADS_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN"
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
+        "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN": "@MAPBOX_PUBLIC_TOKEN"
       }
     },
     "production": {
       "autoIncrement": true,
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "gradleCommand": ":app:assembleRelease"
       },
       "env": {
         "MAPBOX_DOWNLOADS_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
-        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN"
+        "RNMAPBOX_MAPS_DOWNLOAD_TOKEN": "@MAPBOX_DOWNLOADS_TOKEN",
+        "EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN": "@MAPBOX_PUBLIC_TOKEN"
       }
     }
   },

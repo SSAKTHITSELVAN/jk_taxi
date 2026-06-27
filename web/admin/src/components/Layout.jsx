@@ -65,6 +65,22 @@ function Layout({ children, onLogout }) {
             </svg>
             Earnings
           </Link>
+
+          <Link to="/active-rides" className={isActive('/active-rides') ? 'active' : ''}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41m11.32 11.32l1.41 1.41M2 12h2m16 0h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+            </svg>
+            Active Rides
+          </Link>
+
+          <Link to="/driver-locations" className={isActive('/driver-locations') ? 'active' : ''}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+              <circle cx="12" cy="10" r="3"/>
+            </svg>
+            Driver Map
+          </Link>
         </nav>
 
         <div className="sidebar-footer">

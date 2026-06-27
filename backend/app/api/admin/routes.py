@@ -173,6 +173,71 @@ async def unblock_driver(
     return {"message": "Driver unblocked successfully"}
 
 
+@router.get("/rides/active")
+async def get_active_rides(
+    current_admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all active rides with driver location"""
+    active_rides = db.query(Ride).filter(
+        Ride.status.in_([RideStatus.PENDING, RideStatus.ACCEPTED, RideStatus.STARTED])
+    ).order_by(Ride.created_at.desc()).all()
+
+    results = []
+    for ride in active_rides:
+        ride_data = {
+            "id": str(ride.id),
+            "user_id": str(ride.user_id),
+            "driver_id": str(ride.driver_id) if ride.driver_id else None,
+            "status": ride.status.value,
+            "pickup_location": ride.pickup_location,
+            "dropoff_location": ride.dropoff_location,
+            "pickup_lat": ride.pickup_lat,
+            "pickup_lng": ride.pickup_lng,
+            "dropoff_lat": ride.dropoff_lat,
+            "dropoff_lng": ride.dropoff_lng,
+            "fare": ride.fare,
+            "created_at": ride.created_at.isoformat() if ride.created_at else None,
+        }
+        if ride.driver_id:
+            driver = db.query(Driver).filter(Driver.id == ride.driver_id).first()
+            if driver:
+                ride_data["driver_name"] = driver.name
+                ride_data["driver_phone"] = driver.phone
+                ride_data["driver_lat"] = driver.current_lat
+                ride_data["driver_lng"] = driver.current_lng
+        results.append(ride_data)
+
+    return results
+
+
+@router.get("/drivers/online")
+async def get_online_drivers(
+    current_admin: Admin = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Get all online drivers with their current location"""
+    drivers = db.query(Driver).filter(
+        Driver.is_online == True,
+        Driver.current_lat.isnot(None),
+        Driver.current_lng.isnot(None)
+    ).all()
+
+    return [
+        {
+            "id": str(d.id),
+            "name": d.name,
+            "phone": d.phone,
+            "vehicle_number": d.vehicle_number,
+            "vehicle_type": d.vehicle_type,
+            "lat": d.current_lat,
+            "lng": d.current_lng,
+            "location_updated_at": d.location_updated_at.isoformat() if d.location_updated_at else None,
+        }
+        for d in drivers
+    ]
+
+
 @router.get("/rides", response_model=List[BookingResponse])
 async def get_all_rides(
     current_admin: Admin = Depends(get_current_admin),

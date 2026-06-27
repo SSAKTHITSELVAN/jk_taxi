@@ -62,7 +62,19 @@ export const adminAPI = {
 
   // Driver Earnings
   getDriverEarnings: async () => {
-    const response = await apiClient.get('/v2/admin/drivers/earnings');
+    const response = await apiClient.get('/v2/admin/admin/drivers/earnings');
+    return response.data;
+  },
+
+  // Active Rides
+  getActiveRides: async () => {
+    const response = await apiClient.get('/admin/rides/active');
+    return response.data;
+  },
+
+  // Online Drivers
+  getOnlineDrivers: async () => {
+    const response = await apiClient.get('/admin/drivers/online');
     return response.data;
   },
 };

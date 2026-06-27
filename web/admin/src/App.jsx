@@ -6,6 +6,8 @@ import Users from './pages/Users';
 import Drivers from './pages/Drivers';
 import Rides from './pages/Rides';
 import DriverEarnings from './pages/DriverEarnings';
+import ActiveRides from './pages/ActiveRides';
+import DriverLocations from './pages/DriverLocations';
 import Layout from './components/Layout';
 import './App.css';
 
@@ -58,6 +60,8 @@ function App() {
                   <Route path="/drivers" element={<Drivers />} />
                   <Route path="/rides" element={<Rides />} />
                   <Route path="/earnings" element={<DriverEarnings />} />
+                  <Route path="/active-rides" element={<ActiveRides />} />
+                  <Route path="/driver-locations" element={<DriverLocations />} />
                 </Routes>
               </Layout>
             ) : (
