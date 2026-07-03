@@ -1,9 +1,10 @@
-.fleet__header { margin-bottom: 52px; }
+.fleet__header { margin-bottom: 52px; text-align: center; }
 
 .fleet__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 20px;
+  justify-content: center;
 }
 
 .fleet__card {

@@ -1,4 +1,4 @@
-.hiw__header { margin-bottom: 52px; }
+.hiw__header { margin-bottom: 52px; text-align: center; }
 
 .hiw__grid {
   display: grid;

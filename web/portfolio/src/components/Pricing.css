@@ -1,10 +1,11 @@
-.pricing__header { margin-bottom: 52px; }
+.pricing__header { margin-bottom: 52px; text-align: center; }
 
 .pricing__grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 24px;
   align-items: start;
+  justify-content: center;
   margin-bottom: 28px;
 }
 

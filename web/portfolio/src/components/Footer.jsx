@@ -13,7 +13,7 @@ export default function Footer() {
               <span className="footer__logo-text">Taxi</span>
             </div>
             <p className="footer__tagline">
-              Tiruppur's trusted ride-booking platform. Safe, affordable, and always on time.
+              Our cities trusted ride-booking platform. Safe, affordable, and always on time.
             </p>
             <div className="footer__location">
               <MapPin size={14} />
@@ -37,7 +37,6 @@ export default function Footer() {
             <a href="#fleet">Mini (Hatchback)</a>
             <a href="#fleet">Sedan</a>
             <a href="#fleet">SUV / MUV</a>
-            <a href="#fleet">Premium</a>
             <a href="#fleet">Auto Rickshaw</a>
             <a href="#fleet">Bike Taxi</a>
           </div>
@@ -45,9 +44,13 @@ export default function Footer() {
           {/* Contact */}
           <div className="footer__contact">
             <h4>Contact Us</h4>
-            <a href="tel:+919876543210" className="footer__contact-item">
+            <a href="tel:+919677895027" className="footer__contact-item">
               <Phone size={14} />
-              +91 98765 43210
+              +91 96778 95027
+            </a>
+            <a href="tel:+919677885027" className="footer__contact-item">
+              <Phone size={14} />
+              +91 96778 85027
             </a>
             <a href="mailto:support@jktaxi.in" className="footer__contact-item">
               <Mail size={14} />
@@ -59,7 +62,7 @@ export default function Footer() {
             </div>
             <div className="footer__contact-item">
               <MapPin size={14} />
-              Tiruppur, TN 641601
+              Tiruppur, TN 641604
             </div>
           </div>
         </div>

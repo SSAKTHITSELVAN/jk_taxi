@@ -1,70 +1,62 @@
 import { motion } from 'framer-motion'
 import { Users, IndianRupee, Star } from 'lucide-react'
+import miniCar from '../assets/mini_car.jpeg'
+import carImage from '../assets/car_image.jpeg'
+import suvErtica from '../assets/suv_ertica.png'
 import './Fleet.css'
 
 const vehicles = [
   {
-    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: miniCar,
     name: 'Mini',
     type: 'Hatchback',
     seats: 4,
-    base: 80,
-    perKm: 14,
+    base: 100,
+    perKm: 20,
     examples: 'WagonR · Alto · Tiago',
     popular: false,
     accentClass: 'fleet__accent--green',
   },
   {
-    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: carImage,
     name: 'Sedan',
     type: 'Sedan',
     seats: 4,
-    base: 120,
-    perKm: 16,
+    base: 100,
+    perKm: 20,
     examples: 'Dzire · Etios · Aura',
     popular: true,
     accentClass: 'fleet__accent--purple',
   },
   {
-    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: suvErtica,
     name: 'SUV',
     type: 'SUV / MUV',
     seats: 7,
-    base: 180,
-    perKm: 22,
+    base: 150,
+    perKm: 25,
     examples: 'Ertiga · Innova · Marazzo',
     popular: false,
     accentClass: 'fleet__accent--blue',
   },
   {
-    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
-    name: 'Premium',
-    type: 'Luxury',
-    seats: 4,
-    base: 250,
-    perKm: 28,
-    examples: 'Innova Crysta · BYD e6',
-    popular: false,
-    accentClass: 'fleet__accent--yellow',
-  },
-  {
-    img: 'https://images.pexels.com/photos/13082172/pexels-photo-13082172.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: 'https://images.pexels.com/photos/20321317/pexels-photo-20321317.jpeg',
     name: 'Auto',
     type: 'Auto Rickshaw',
     seats: 3,
-    base: 30,
-    perKm: 10,
+    base: 80,
+    perKm: 21,
     examples: 'Bajaj RE · Piaggio Ape',
     popular: false,
     accentClass: 'fleet__accent--yellow',
   },
   {
-    img: 'https://images.pexels.com/photos/36875809/pexels-photo-36875809.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: 'https://images.pexels.com/photos/30754807/pexels-photo-30754807.jpeg',
     name: 'Bike',
     type: 'Two-Wheeler',
     seats: 1,
-    base: 20,
-    perKm: 7,
+    base: 23,
+    perKm: 13,
     examples: 'Pulsar · Apache · Activa',
     popular: false,
     accentClass: 'fleet__accent--blue',
@@ -85,7 +77,7 @@ export default function Fleet() {
           <span className="section-tag tag-blue"><Star size={13} /> Our Fleet</span>
           <h2 className="section-title">Choose Your Perfect Ride</h2>
           <p className="section-sub">
-            Six vehicle types to match every need and budget in Tiruppur.
+            Five vehicle types to match every need and budget in Tiruppur.
           </p>
         </motion.div>
 

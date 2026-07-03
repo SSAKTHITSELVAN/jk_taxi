@@ -1,37 +1,38 @@
 import { motion } from 'framer-motion'
 import { Zap } from 'lucide-react'
+import carImage from '../assets/car_image.jpeg'
 import './Services.css'
 
 const services = [
   {
-    img: 'https://images.pexels.com/photos/14261311/pexels-photo-14261311.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: carImage,
     tag: 'Most Popular',
     tagClass: 'tag-purple',
     title: 'Car Rides',
     desc: 'AC sedans, SUVs and premium cars for city travel, airport drops, and outstation trips.',
     features: ['One Way & Round Trip', 'Airport Pickup / Drop', 'Outstation Available'],
     accent: 'purple',
-    startFrom: '₹80',
+    startFrom: '₹100',
   },
   {
-    img: 'https://images.pexels.com/photos/13082172/pexels-photo-13082172.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: 'https://images.pexels.com/photos/20321317/pexels-photo-20321317.jpeg',
     tag: 'Best Value',
     tagClass: 'tag-yellow',
     title: 'Auto Rickshaw',
     desc: 'Quick, affordable autos for short distances within Tiruppur city. No bargaining, fixed fares.',
     features: ['Fixed Metered Fare', 'No Bargaining', 'Short City Rides'],
     accent: 'yellow',
-    startFrom: '₹30',
+    startFrom: '₹80',
   },
   {
-    img: 'https://images.pexels.com/photos/36875809/pexels-photo-36875809.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
+    img: 'https://images.pexels.com/photos/30754807/pexels-photo-30754807.jpeg',
     tag: 'Fastest',
     tagClass: 'tag-blue',
     title: 'Bike Taxi',
     desc: 'Beat traffic with two-wheeler rides. Perfect for solo commuters who need speed.',
     features: ['2-Min Pickup', 'Beat Traffic', 'Helmet Provided'],
     accent: 'blue',
-    startFrom: '₹20',
+    startFrom: '₹23',
   },
   {
     img: 'https://images.pexels.com/photos/5794231/pexels-photo-5794231.jpeg?auto=compress&cs=tinysrgb&w=600&h=400&fit=crop',
@@ -41,7 +42,7 @@ const services = [
     desc: 'One-tap booking. We match you with the nearest available vehicle in seconds. No waiting.',
     features: ['Nearest Driver', 'Any Vehicle Type', 'Real-Time Match'],
     accent: 'green',
-    startFrom: '₹20',
+    startFrom: '₹23',
   },
 ]
 

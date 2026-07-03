@@ -37,9 +37,9 @@ export default function Navbar() {
           </nav>
 
           <div className="nb-right">
-            <a href="tel:+919876543210" className="nb-tel">
+            <a href="tel:+9104214433435" className="nb-tel">
               <Phone size={14} strokeWidth={2.5} />
-              98765 43210
+              0421 4433435
             </a>
             <a href="#download" className="nb-book">Book a Ride</a>
           </div>
@@ -79,8 +79,8 @@ export default function Navbar() {
                 ))}
               </nav>
               <div className="nb-drawer-ft">
-                <a href="tel:+919876543210" className="nb-drawer-call">
-                  <Phone size={16}/> +91 98765 43210
+                <a href="tel:+9104214433435" className="nb-drawer-call">
+                  <Phone size={16}/> 0421 4433435
                 </a>
                 <a href="#download" className="nb-drawer-book" onClick={close}>
                   Book a Ride

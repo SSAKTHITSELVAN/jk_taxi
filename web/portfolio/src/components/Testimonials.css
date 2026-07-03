@@ -1,4 +1,4 @@
-.testi__header { margin-bottom: 52px; }
+.testi__header { margin-bottom: 52px; text-align: center; }
 
 .testi__grid {
   display: grid;

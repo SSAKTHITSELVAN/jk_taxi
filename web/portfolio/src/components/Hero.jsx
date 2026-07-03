@@ -5,17 +5,16 @@ import './Hero.css'
 import heroVideo from '../assets/hero_section_background.mp4'
 
 const VEHS = [
-  { id:'car',  Icon:Car,  label:'Car',   sub:'Mini · Sedan · SUV',  price:'From ₹80'  },
-  { id:'auto', Icon:Bus,  label:'Auto',  sub:'Auto Rickshaw',        price:'From ₹30'  },
-  { id:'bike', Icon:Bike, label:'Bike',  sub:'Two-Wheeler Taxi',     price:'From ₹20'  },
+  { id:'car',  Icon:Car,  label:'Car',   sub:'Mini · Sedan · SUV',  price:'From ₹100' },
+  { id:'auto', Icon:Bus,  label:'Auto',  sub:'Auto Rickshaw',        price:'From ₹80'  },
+  { id:'bike', Icon:Bike, label:'Bike',  sub:'Two-Wheeler Taxi',     price:'From ₹23'  },
   { id:'ping', Icon:Zap,  label:'Ping',  sub:'Nearest Available',    price:'Instant'   },
 ]
 
 const STATS = [
-  { val:'10,000+', lbl:'Rides Completed'   },
-  { val:'500+',    lbl:'Verified Drivers'  },
-  { val:'4.9 / 5', lbl:'Customer Rating'  },
-  { val:'24 / 7',  lbl:'Always Available'  },
+  { val:'1000+', lbl:'Rides'  },
+  { val:'200+',  lbl:'Riders' },
+  { val:'24/7',  lbl:'Available' },
 ]
 
 export default function Hero() {
@@ -55,7 +54,7 @@ export default function Hero() {
           transition={{ duration:0.4 }}
         >
           <span className="hr-label-dot" />
-          Tiruppur's Trusted Ride Service
+          Your Trusted Ride Service
         </motion.p>
 
         {/* Main headline */}
@@ -64,7 +63,7 @@ export default function Hero() {
           transition={{ duration:0.5, delay:0.08 }}
         >
           Ride Smarter<br />
-          <span className="hr-headline-yellow">Across Tiruppur</span>
+          <span className="hr-headline-yellow">JK Taxi</span>
         </motion.h1>
 
         <motion.p className="hr-subtext"
@@ -144,9 +143,9 @@ export default function Hero() {
             Download App &amp; Book Now
             <ArrowRight size={16} strokeWidth={2.5} />
           </a>
-          <a href="tel:+919876543210" className="hr-cta-call">
+          <a href="tel:+9104214433435" className="hr-cta-call">
             <Phone size={15} strokeWidth={2.5} />
-            Call +91 98765 43210
+            Call 0421 4433435
           </a>
         </motion.div>
 
