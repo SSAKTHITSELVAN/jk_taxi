@@ -294,6 +294,37 @@ async def get_nearby_drivers_count(
     return {"nearby_count": nearby}
 
 
+@router.get("/nearby-drivers/locations")
+async def get_nearby_drivers_locations(
+    lat: float = Query(..., description="User latitude"),
+    lng: float = Query(..., description="User longitude"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get locations of online drivers near the user for map display"""
+    online_drivers = db.query(Driver).filter(
+        Driver.is_online == True,
+        Driver.is_active == True,
+        Driver.current_lat.isnot(None),
+        Driver.current_lng.isnot(None),
+    ).all()
+
+    radius = 0.15  # ~15km radius
+    drivers = []
+    for d in online_drivers:
+        lat_diff = abs(d.current_lat - lat)
+        lng_diff = abs(d.current_lng - lng)
+        if lat_diff <= radius and lng_diff <= radius:
+            drivers.append({
+                "id": str(d.id),
+                "latitude": d.current_lat,
+                "longitude": d.current_lng,
+                "vehicle_type": d.vehicle_type,
+            })
+
+    return {"drivers": drivers}
+
+
 @router.get("/{ride_id}", response_model=RideEnhancedResponse)
 async def get_booking(
     ride_id: UUID,
