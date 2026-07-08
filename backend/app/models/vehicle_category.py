@@ -13,8 +13,8 @@ class VehicleCategoryConfig(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
 
     # Category details
-    name = Column(String(50), unique=True, nullable=False)  # mini, sedan, suv, premium
-    display_name = Column(String(100), nullable=False)  # Mini / Hatchback, Sedan, SUV, Premium
+    name = Column(String(50), unique=True, nullable=False)  # mini, sedan, suv
+    display_name = Column(String(100), nullable=False)  # Mini / Hatchback, Sedan, SUV
     description = Column(Text, nullable=True)
 
     # Capacity

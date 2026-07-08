@@ -10,11 +10,8 @@ from app.db.base import Base
 
 class TripType(str, enum.Enum):
     ONE_WAY = "one_way"
-    ROUND_TRIP = "round_trip"
     RENTAL = "rental"
     OUTSTATION = "outstation"
-    AIRPORT_PICKUP = "airport_pickup"
-    AIRPORT_DROP = "airport_drop"
 
 
 class RideStatus(str, enum.Enum):
@@ -35,7 +32,6 @@ class VehicleCategory(str, enum.Enum):
     MINI = "mini"
     SEDAN = "sedan"
     SUV = "suv"
-    PREMIUM = "premium"
 
 
 def generate_ride_otp():

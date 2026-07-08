@@ -7,18 +7,14 @@ from enum import Enum
 
 class TripType(str, Enum):
     ONE_WAY = "one_way"
-    ROUND_TRIP = "round_trip"
     RENTAL = "rental"
     OUTSTATION = "outstation"
-    AIRPORT_PICKUP = "airport_pickup"
-    AIRPORT_DROP = "airport_drop"
 
 
 class VehicleCategory(str, Enum):
     MINI = "mini"
     SEDAN = "sedan"
     SUV = "suv"
-    PREMIUM = "premium"
 
 
 class RideStatus(str, Enum):
