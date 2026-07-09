@@ -20,12 +20,30 @@ def calculate_fare(
     distance_km: float,
     vehicle_category: VehicleCategoryConfig,
     is_night: bool = False,
-    toll_charges: float = 0.0
+    toll_charges: float = 0.0,
+    trip_type: str = "one_way",
+    rental_hours: int = 1
 ) -> dict:
     """Calculate detailed fare breakdown"""
-    base_fare = vehicle_category.base_fare
-    distance_fare = distance_km * vehicle_category.per_km_rate
     platform_fee = 40.0
+    category_name = vehicle_category.name
+
+    if trip_type == "rental":
+        # Rental: ₹280/hr base, 10km free per hour
+        # Bike: no rental allowed (handled at validation level)
+        # Mini: same rate (no surcharge)
+        # Others (sedan, suv, auto): +20% on hourly rate
+        hourly_rate = 280.0
+        if category_name not in ("mini", "bike"):
+            hourly_rate = hourly_rate * 1.2  # 20% more for sedan/suv/auto
+
+        base_fare = hourly_rate * rental_hours
+        free_km = 10.0 * rental_hours
+        extra_km = max(0, distance_km - free_km)
+        distance_fare = extra_km * vehicle_category.per_km_rate
+    else:
+        base_fare = vehicle_category.base_fare
+        distance_fare = distance_km * vehicle_category.per_km_rate
 
     # Night charges (10 PM - 6 AM)
     night_charges = (base_fare + distance_fare) * 0.15 if is_night else 0.0
@@ -112,20 +130,27 @@ async def create_booking_enhanced(
             detail="Vehicle category not found"
         )
 
+    # Bike rental not allowed
+    if booking.trip_type.value == "rental" and booking.vehicle_category.value == "bike":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Rental is not available for Bike category"
+        )
+
     # Calculate distance
     if booking.dropoff_lat and booking.dropoff_lng:
         distance_km = abs(booking.dropoff_lat - booking.pickup_lat) + abs(booking.dropoff_lng - booking.pickup_lng)
         distance_km = max(2.0, distance_km * 100)  # Minimum 2km
     else:
         # For rental, use estimated distance
-        distance_km = 20.0
+        distance_km = 10.0  # 10km free per hour
 
     # Check if night time
     ride_time = booking.scheduled_datetime or datetime.now()
     is_night = ride_time.hour >= 22 or ride_time.hour < 6
 
     # Calculate fare breakdown
-    fare_breakdown = calculate_fare(distance_km, category_config, is_night)
+    fare_breakdown = calculate_fare(distance_km, category_config, is_night, trip_type=booking.trip_type.value)
 
     # Convert stops to dict format
     stops_data = [stop.model_dump() for stop in booking.stops]
