@@ -167,7 +167,7 @@ async def create_booking_enhanced(
     db.commit()
     db.refresh(new_ride)
 
-    return new_ride
+    return enrich_ride_with_driver(new_ride, db)
 
 
 def enrich_ride_with_driver(ride: RideEnhanced, db: Session) -> dict:
@@ -343,7 +343,7 @@ async def get_booking(
             detail="Ride not found"
         )
 
-    return ride
+    return enrich_ride_with_driver(ride, db)
 
 
 @router.put("/{ride_id}/cancel", response_model=RideEnhancedResponse)
@@ -382,7 +382,7 @@ async def cancel_booking(
     db.commit()
     db.refresh(ride)
 
-    return ride
+    return enrich_ride_with_driver(ride, db)
 
 
 @router.get("/history/all", response_model=List[RideEnhancedResponse])
@@ -396,4 +396,4 @@ async def get_ride_history(
         RideEnhanced.status.in_(["completed", "cancelled"])
     ).order_by(RideEnhanced.created_at.desc()).all()
 
-    return rides
+    return [enrich_ride_with_driver(ride, db) for ride in rides]

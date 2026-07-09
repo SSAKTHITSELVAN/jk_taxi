@@ -15,6 +15,33 @@ from app.models.ride_cancellation import RideCancellation
 router = APIRouter()
 
 
+def enrich_ride_response(ride: RideEnhanced, db: Session, current_driver: Driver = None) -> dict:
+    """Add driver and customer details to ride response"""
+    ride_dict = {c.name: getattr(ride, c.name) for c in ride.__table__.columns}
+    ride_dict['driver_name'] = None
+    ride_dict['driver_phone'] = None
+    ride_dict['driver_vehicle_number'] = None
+    ride_dict['driver_vehicle_type'] = None
+    ride_dict['customer_name'] = None
+    ride_dict['customer_phone'] = None
+
+    if ride.driver_id:
+        driver = current_driver if (current_driver and current_driver.id == ride.driver_id) else db.query(Driver).filter(Driver.id == ride.driver_id).first()
+        if driver:
+            ride_dict['driver_name'] = driver.name
+            ride_dict['driver_phone'] = driver.phone
+            ride_dict['driver_vehicle_number'] = driver.vehicle_number
+            ride_dict['driver_vehicle_type'] = driver.vehicle_type
+
+    if ride.user_id:
+        customer = db.query(User).filter(User.id == ride.user_id).first()
+        if customer:
+            ride_dict['customer_name'] = customer.name
+            ride_dict['customer_phone'] = customer.phone
+
+    return ride_dict
+
+
 class LocationUpdate(BaseModel):
     latitude: float
     longitude: float
@@ -200,7 +227,7 @@ async def accept_ride(
     db.commit()
     db.refresh(ride)
 
-    return ride
+    return enrich_ride_response(ride, db, current_driver)
 
 
 @router.post("/rides/{ride_id}/verify-otp", response_model=RideEnhancedResponse)
@@ -239,7 +266,7 @@ async def verify_ride_otp(
     db.commit()
     db.refresh(ride)
 
-    return ride
+    return enrich_ride_response(ride, db, current_driver)
 
 
 @router.post("/rides/{ride_id}/start", response_model=RideEnhancedResponse)
@@ -276,7 +303,7 @@ async def start_ride(
     db.commit()
     db.refresh(ride)
 
-    return ride
+    return enrich_ride_response(ride, db, current_driver)
 
 
 @router.post("/rides/{ride_id}/complete", response_model=RideEnhancedResponse)
@@ -323,7 +350,7 @@ async def complete_ride(
     db.commit()
     db.refresh(ride)
 
-    return ride
+    return enrich_ride_response(ride, db, current_driver)
 
 
 @router.post("/rides/{ride_id}/cancel")
@@ -392,14 +419,7 @@ async def get_active_ride(
             detail="No active ride found"
         )
 
-    # Enrich with customer info
-    customer = db.query(User).filter(User.id == active_ride.user_id).first()
-    response = RideEnhancedResponse.model_validate(active_ride)
-    if customer:
-        response.customer_name = customer.name
-        response.customer_phone = customer.phone
-
-    return response
+    return enrich_ride_response(active_ride, db, current_driver)
 
 
 @router.get("/rides/history", response_model=List[RideEnhancedResponse])
@@ -413,7 +433,7 @@ async def get_driver_ride_history(
         RideEnhanced.status == "completed"
     ).order_by(RideEnhanced.created_at.desc()).all()
 
-    return rides
+    return [enrich_ride_response(ride, db, current_driver) for ride in rides]
 
 
 @router.get("/earnings")
