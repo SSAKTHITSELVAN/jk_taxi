@@ -22,6 +22,8 @@ export const bookingEnhancedApi = {
     dropoff_lat: number;
     dropoff_lng: number;
     vehicle_category: string;
+    trip_type?: string;
+    rental_hours?: number;
     scheduled_datetime?: string;
   }): Promise<FareBreakdown> => {
     const response = await apiClient.post<FareBreakdown>(
@@ -66,6 +68,13 @@ export const bookingEnhancedApi = {
   // Get nearby drivers count
   getNearbyDrivers: async (): Promise<{ nearby_count: number }> => {
     const response = await apiClient.get<{ nearby_count: number }>('/api/v2/bookings/nearby-drivers');
+    return response.data;
+  },
+
+  // Get nearby drivers locations for map display
+  getNearbyDriversLocations: async (lat: number, lng: number): Promise<{ drivers: Array<{ id: string; latitude: number; longitude: number; vehicle_type: string }> }> => {
+    const response = await apiClient.get('/api/v2/bookings/nearby-drivers/locations', { params: { lat, lng } });
+    console.log('[NearbyDrivers API] lat:', lat, 'lng:', lng, 'response:', JSON.stringify(response.data));
     return response.data;
   },
 

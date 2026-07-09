@@ -82,6 +82,8 @@ async def calculate_fare_estimate(
     dropoff_lat: float,
     dropoff_lng: float,
     vehicle_category: str,
+    trip_type: str = "one_way",
+    rental_hours: int = 1,
     scheduled_datetime: datetime = None,
     db: Session = Depends(get_db)
 ):
@@ -106,7 +108,7 @@ async def calculate_fare_estimate(
     is_night = ride_time.hour >= 22 or ride_time.hour < 6
 
     # Calculate fare
-    fare_breakdown = calculate_fare(distance_km, category_config, is_night)
+    fare_breakdown = calculate_fare(distance_km, category_config, is_night, trip_type=trip_type, rental_hours=rental_hours)
 
     return FareBreakdown(**fare_breakdown)
 

@@ -2,13 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   TextInput,
   TouchableOpacity,
   Alert,
-  ActivityIndicator,
   Modal,
+  ImageSourcePropType,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ import { bookingEnhancedApi, userEnhancedApi } from '../src/api/booking-enhanced
 import { Button } from '../src/components/common/Button';
 import { Card } from '../src/components/common/Card';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
+import { LoadingAnimation } from '../src/components/common/LoadingAnimation';
 import {
   TripType,
   VehicleCategory,
@@ -24,6 +26,14 @@ import {
   RidePreferences,
   FareBreakdown,
 } from '../src/types/enhanced';
+
+const VEHICLE_IMAGES: Record<string, ImageSourcePropType> = {
+  auto: require('../assets/car_options/auto.png'),
+  bike: require('../assets/car_options/bike_.png'),
+  mini: require('../assets/car_options/mini_car_.png'),
+  sedan: require('../assets/car_options/sedan.png'),
+  suv: require('../assets/car_options/suv_car_.png'),
+};
 
 export default function BookRideEnhancedScreen() {
   // Step state
@@ -53,7 +63,7 @@ export default function BookRideEnhancedScreen() {
 
   // Step 5: Vehicle Category
   const [vehicleCategories, setVehicleCategories] = useState<VehicleCategoryData[]>([]);
-  const [selectedVehicle, setSelectedVehicle] = useState<VehicleCategory>(VehicleCategory.MINI);
+  const [selectedVehicle, setSelectedVehicle] = useState<VehicleCategory>(VehicleCategory.AUTO);
   const [fareBreakdown, setFareBreakdown] = useState<FareBreakdown | null>(null);
 
   // Step 6: Preferences
@@ -89,15 +99,16 @@ export default function BookRideEnhancedScreen() {
   };
 
   const calculateFare = async () => {
-    if (!dropoffLocation) return;
+    if (!dropoffLocation && tripType !== TripType.RENTAL) return;
 
     try {
       const fare = await bookingEnhancedApi.calculateFare({
         pickup_lat: pickupLat,
         pickup_lng: pickupLng,
-        dropoff_lat: dropoffLat,
-        dropoff_lng: dropoffLng,
+        dropoff_lat: dropoffLat || pickupLat,
+        dropoff_lng: dropoffLng || pickupLng,
         vehicle_category: selectedVehicle,
+        trip_type: tripType,
         scheduled_datetime: isScheduled ? scheduledDate : undefined,
       });
       setFareBreakdown(fare);
@@ -107,10 +118,10 @@ export default function BookRideEnhancedScreen() {
   };
 
   useEffect(() => {
-    if (currentStep === 5 && dropoffLocation) {
+    if (currentStep === 5) {
       calculateFare();
     }
-  }, [currentStep, selectedVehicle]);
+  }, [currentStep, selectedVehicle, tripType]);
 
   const validateStep = () => {
     switch (currentStep) {
@@ -248,11 +259,8 @@ export default function BookRideEnhancedScreen() {
   const renderTripTypeSelector = () => {
     const tripTypes = [
       { value: TripType.ONE_WAY, label: 'One Way', icon: 'arrow-forward' },
-      { value: TripType.ROUND_TRIP, label: 'Round Trip', icon: 'swap-horizontal' },
       { value: TripType.RENTAL, label: 'Rental', icon: 'time' },
       { value: TripType.OUTSTATION, label: 'Outstation', icon: 'car' },
-      { value: TripType.AIRPORT_PICKUP, label: 'Airport Pickup', icon: 'airplane' },
-      { value: TripType.AIRPORT_DROP, label: 'Airport Drop', icon: 'airplane' },
     ];
 
     return (
@@ -449,7 +457,7 @@ export default function BookRideEnhancedScreen() {
     if (loadingCategories) {
       return (
         <View style={styles.centerContent}>
-          <ActivityIndicator size="large" color={Colors.primary} />
+          <LoadingAnimation size="large" />
         </View>
       );
     }
@@ -468,9 +476,14 @@ export default function BookRideEnhancedScreen() {
             onPress={() => setSelectedVehicle(vehicle.name as VehicleCategory)}
           >
             <View style={styles.vehicleHeader}>
-              <View>
-                <Text style={styles.vehicleName}>{vehicle.display_name}</Text>
-                <Text style={styles.vehicleCapacity}>{vehicle.seater_capacity} Seater</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                {VEHICLE_IMAGES[vehicle.name] && (
+                  <Image source={VEHICLE_IMAGES[vehicle.name]} style={styles.vehicleImg} resizeMode="contain" />
+                )}
+                <View>
+                  <Text style={styles.vehicleName}>{vehicle.display_name}</Text>
+                  <Text style={styles.vehicleCapacity}>{vehicle.seater_capacity} Seater</Text>
+                </View>
               </View>
               <View style={styles.vehiclePricing}>
                 <Text style={styles.vehiclePrice}>₹{vehicle.base_fare}</Text>
@@ -777,7 +790,13 @@ const styles = StyleSheet.create({
   vehicleHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.sm,
+  },
+  vehicleImg: {
+    width: 70,
+    height: 45,
+    marginRight: Spacing.sm,
   },
   vehicleName: {
     fontSize: FontSizes.lg,
