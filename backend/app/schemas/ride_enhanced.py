@@ -12,6 +12,8 @@ class TripType(str, Enum):
 
 
 class VehicleCategory(str, Enum):
+    AUTO = "auto"
+    BIKE = "bike"
     MINI = "mini"
     SEDAN = "sedan"
     SUV = "suv"

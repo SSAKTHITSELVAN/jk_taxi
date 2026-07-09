@@ -29,6 +29,8 @@ class PaymentStatus(str, enum.Enum):
 
 
 class VehicleCategory(str, enum.Enum):
+    AUTO = "auto"
+    BIKE = "bike"
     MINI = "mini"
     SEDAN = "sedan"
     SUV = "suv"
