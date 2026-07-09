@@ -1,6 +1,6 @@
 import uuid
 import random
-from sqlalchemy import Column, String, Float, DateTime, Enum, ForeignKey, Boolean, Integer, Text
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Boolean, Integer, Text
 from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -49,8 +49,8 @@ class RideEnhanced(Base):
     driver_id = Column(UUID(as_uuid=True), ForeignKey("drivers.id"), nullable=True, index=True)
 
     # Trip Details
-    trip_type = Column(Enum(TripType), default=TripType.ONE_WAY, nullable=False)
-    vehicle_category = Column(Enum(VehicleCategory), default=VehicleCategory.MINI, nullable=False)
+    trip_type = Column(String(50), default="one_way", nullable=False)
+    vehicle_category = Column(String(50), default="mini", nullable=False)
 
     # Locations
     pickup_location = Column(String(255), nullable=False)
@@ -80,7 +80,7 @@ class RideEnhanced(Base):
     otp_verified = Column(Boolean, default=False)
 
     # Status & Tracking (like Rapido)
-    status = Column(Enum(RideStatus), default=RideStatus.PENDING, nullable=False, index=True)
+    status = Column(String(50), default="pending", nullable=False, index=True)
     rejection_count = Column(Integer, default=0)  # Number of drivers who rejected this ride
 
     # Fare Breakdown
@@ -94,7 +94,7 @@ class RideEnhanced(Base):
     fare = Column(Float, default=0.0)  # Total fare
 
     # Payment
-    payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)
+    payment_status = Column(String(50), default="pending", nullable=False)
     payment_method = Column(String(50), default="cash")
     transaction_id = Column(String(100), nullable=True)
 

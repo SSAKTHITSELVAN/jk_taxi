@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, Float, DateTime, Enum, ForeignKey
+from sqlalchemy import Column, String, Float, DateTime, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -35,9 +35,9 @@ class Ride(Base):
     dropoff_lat = Column(Float, nullable=False)
     dropoff_lng = Column(Float, nullable=False)
 
-    status = Column(Enum(RideStatus), default=RideStatus.PENDING, nullable=False, index=True)
+    status = Column(String(50), default="pending", nullable=False, index=True)
     fare = Column(Float, default=0.0)
-    payment_status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False)
+    payment_status = Column(String(50), default="pending", nullable=False)
     payment_method = Column(String(50), default="cash")
     transaction_id = Column(String(100), nullable=True)
 

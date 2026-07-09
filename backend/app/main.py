@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
+from app.db.base import Base
+from app.db.database import engine
 from app.api.auth import routes as auth_routes
 from app.api.user import routes as user_routes
 from app.api.driver import routes as driver_routes
@@ -26,6 +28,18 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
+
+@app.on_event("startup")
+async def startup():
+    import app.models.user
+    import app.models.driver
+    import app.models.admin
+    import app.models.ride
+    import app.models.ride_enhanced
+    import app.models.vehicle_category
+    import app.models.ride_cancellation
+    Base.metadata.create_all(bind=engine)
+
 
 # Health check
 @app.get("/health")
