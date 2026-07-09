@@ -25,7 +25,7 @@ def calculate_fare(
     """Calculate detailed fare breakdown"""
     base_fare = vehicle_category.base_fare
     distance_fare = distance_km * vehicle_category.per_km_rate
-    platform_fee = 20.0
+    platform_fee = 40.0
 
     # Night charges (10 PM - 6 AM)
     night_charges = (base_fare + distance_fare) * 0.15 if is_night else 0.0

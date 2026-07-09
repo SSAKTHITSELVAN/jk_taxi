@@ -86,7 +86,7 @@ class RideEnhanced(Base):
     # Fare Breakdown
     base_fare = Column(Float, default=0.0)
     distance_fare = Column(Float, default=0.0)
-    platform_fee = Column(Float, default=20.0)
+    platform_fee = Column(Float, default=40.0)
     gst = Column(Float, default=0.0)
     toll_charges = Column(Float, default=0.0)
     night_charges = Column(Float, default=0.0)
