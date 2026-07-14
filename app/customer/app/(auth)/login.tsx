@@ -1,59 +1,96 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Alert,
+  TextInput,
 } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { useAuthStore } from '../../src/store/authStore';
 import { Button } from '../../src/components/common/Button';
 import { Input } from '../../src/components/common/Input';
 import { Card } from '../../src/components/common/Card';
-import { Colors, Spacing, FontSizes, FontWeights } from '../../src/constants/theme';
-import { validatePhone, validatePassword } from '../../src/utils/validation';
+import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../src/constants/theme';
+import { validatePhone } from '../../src/utils/validation';
 
 export default function LoginScreen() {
   const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
-  const [errors, setErrors] = useState({ phone: '', password: '' });
+  const [otp, setOtp] = useState(['', '', '', '']);
+  const [phoneError, setPhoneError] = useState('');
 
-  const { login, isLoading, error, clearError } = useAuthStore();
+  const otpRefs = useRef<(TextInput | null)[]>([]);
+  const { sendOTP, verifyOTP, otpSent, isLoading, error, clearError, resetOTPState } = useAuthStore();
 
-  const validateForm = (): boolean => {
-    const newErrors = { phone: '', password: '' };
-    let isValid = true;
+  useEffect(() => {
+    return () => resetOTPState();
+  }, []);
 
+  const handleSendOTP = async () => {
+    setPhoneError('');
     if (!validatePhone(phone)) {
-      newErrors.phone = 'Please enter a valid 10-digit phone number';
-      isValid = false;
+      setPhoneError('Please enter a valid 10-digit phone number');
+      return;
     }
-
-    if (!validatePassword(password)) {
-      newErrors.password = 'Password must be at least 6 characters';
-      isValid = false;
+    try {
+      clearError();
+      await sendOTP(phone);
+    } catch (err) {
+      // error is set in store
     }
-
-    setErrors(newErrors);
-    return isValid;
   };
 
-  const handleLogin = async () => {
-    if (!validateForm()) return;
+  const handleOTPChange = (value: string, index: number) => {
+    const newOtp = [...otp];
+    newOtp[index] = value;
+    setOtp(newOtp);
+
+    // Auto-focus next input
+    if (value && index < 3) {
+      otpRefs.current[index + 1]?.focus();
+    }
+
+    // Auto-submit when all 4 digits entered
+    if (value && index === 3) {
+      const fullOtp = newOtp.join('');
+      if (fullOtp.length === 4) {
+        handleVerifyOTP(fullOtp);
+      }
+    }
+  };
+
+  const handleOTPKeyPress = (key: string, index: number) => {
+    if (key === 'Backspace' && !otp[index] && index > 0) {
+      otpRefs.current[index - 1]?.focus();
+    }
+  };
+
+  const handleVerifyOTP = async (otpCode?: string) => {
+    const code = otpCode || otp.join('');
+    if (code.length !== 4) return;
 
     try {
       clearError();
-      await login(phone, password);
-      // Navigate to home screen after successful login
-      router.replace('/');
+      const isNewUser = await verifyOTP(phone, code);
+      if (isNewUser) {
+        router.replace('/(auth)/register');
+      } else {
+        router.replace('/');
+      }
     } catch (err) {
-      Alert.alert('Login Failed', error || 'Please check your credentials');
+      setOtp(['', '', '', '']);
+      otpRefs.current[0]?.focus();
     }
+  };
+
+  const handleChangePhone = () => {
+    resetOTPState();
+    setOtp(['', '', '', '']);
   };
 
   return (
@@ -66,57 +103,90 @@ export default function LoginScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Logo/Header */}
+          {/* Logo */}
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Ionicons name="car-sport" size={48} color={Colors.primary} />
-            </View>
-            <Text style={styles.title}>JK Taxi</Text>
-            <Text style={styles.subtitle}>Welcome back! Login to continue</Text>
+            <Image
+              source={require('../../assets/images/jk_taxi_logo_home_screen_.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.subtitle}>
+              {otpSent ? 'Enter the OTP sent to your phone' : 'Enter your phone number to continue'}
+            </Text>
           </View>
 
-          {/* Login Form */}
           <Card elevated style={styles.formCard}>
-            <Input
-              label="Phone Number"
-              placeholder="Enter your phone number"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              maxLength={10}
-              icon="call-outline"
-              error={errors.phone}
-            />
+            {!otpSent ? (
+              <>
+                <Input
+                  label="Phone Number"
+                  placeholder="Enter your phone number"
+                  value={phone}
+                  onChangeText={setPhone}
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  icon="call-outline"
+                  error={phoneError}
+                />
 
-            <Input
-              label="Password"
-              placeholder="Enter your password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              icon="lock-closed-outline"
-              error={errors.password}
-            />
+                {error && <Text style={styles.errorText}>{error}</Text>}
 
-            <Button
-              title="Login"
-              onPress={handleLogin}
-              loading={isLoading}
-              fullWidth
-              style={styles.loginButton}
-            />
+                <Button
+                  title="Send OTP"
+                  onPress={handleSendOTP}
+                  loading={isLoading}
+                  fullWidth
+                  style={styles.actionButton}
+                />
+              </>
+            ) : (
+              <>
+                <View style={styles.phoneDisplay}>
+                  <Text style={styles.phoneLabel}>OTP sent to</Text>
+                  <Text style={styles.phoneNumber}>+91 {phone}</Text>
+                  <Button
+                    title="Change"
+                    variant="ghost"
+                    size="small"
+                    onPress={handleChangePhone}
+                  />
+                </View>
+
+                <View style={styles.otpContainer}>
+                  {otp.map((digit, index) => (
+                    <TextInput
+                      key={index}
+                      ref={(ref) => { otpRefs.current[index] = ref; }}
+                      style={[styles.otpInput, digit ? styles.otpInputFilled : null]}
+                      value={digit}
+                      onChangeText={(value) => handleOTPChange(value.replace(/[^0-9]/g, ''), index)}
+                      onKeyPress={({ nativeEvent }) => handleOTPKeyPress(nativeEvent.key, index)}
+                      keyboardType="number-pad"
+                      maxLength={1}
+                      autoFocus={index === 0}
+                    />
+                  ))}
+                </View>
+
+                {error && <Text style={styles.errorText}>{error}</Text>}
+
+                <Button
+                  title="Verify OTP"
+                  onPress={() => handleVerifyOTP()}
+                  loading={isLoading}
+                  fullWidth
+                  style={styles.actionButton}
+                />
+
+                <Button
+                  title="Resend OTP"
+                  variant="ghost"
+                  onPress={handleSendOTP}
+                  style={styles.resendButton}
+                />
+              </>
+            )}
           </Card>
-
-          {/* Sign Up Link */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Don't have an account?</Text>
-            <Button
-              title="Sign Up"
-              variant="ghost"
-              size="small"
-              onPress={() => router.push('/(auth)/register')}
-            />
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -140,20 +210,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Spacing.xl,
   },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logo: {
+    width: 180,
+    height: 120,
     marginBottom: Spacing.md,
-  },
-  title: {
-    fontSize: FontSizes.xxxl,
-    fontWeight: FontWeights.bold,
-    color: Colors.text,
-    marginBottom: Spacing.xs,
   },
   subtitle: {
     fontSize: FontSizes.md,
@@ -163,16 +223,53 @@ const styles = StyleSheet.create({
   formCard: {
     marginBottom: Spacing.lg,
   },
-  loginButton: {
+  actionButton: {
     marginTop: Spacing.md,
   },
-  footer: {
+  phoneDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+    flexWrap: 'wrap',
+    gap: Spacing.xs,
+  },
+  phoneLabel: {
+    fontSize: FontSizes.sm,
+    color: Colors.textSecondary,
+  },
+  phoneNumber: {
+    fontSize: FontSizes.md,
+    fontWeight: FontWeights.semibold,
+    color: Colors.text,
+  },
+  otpContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    alignItems: 'center',
+    gap: Spacing.md,
+    marginBottom: Spacing.lg,
   },
-  footerText: {
-    fontSize: FontSizes.md,
-    color: Colors.textSecondary,
+  otpInput: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    backgroundColor: Colors.surface,
+    color: Colors.text,
+    fontSize: FontSizes.xxl,
+    fontWeight: FontWeights.bold,
+    textAlign: 'center',
+  },
+  otpInputFilled: {
+    borderColor: Colors.primary,
+  },
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSizes.sm,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+  resendButton: {
+    marginTop: Spacing.sm,
   },
 });

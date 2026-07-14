@@ -424,3 +424,132 @@ async def get_ride_history(
     ).order_by(RideEnhanced.created_at.desc()).all()
 
     return [enrich_ride_with_driver(ride, db) for ride in rides]
+
+
+# === Razorpay Payment ===
+
+from pydantic import BaseModel
+
+
+class CreateOrderResponse(BaseModel):
+    order_id: str
+    amount: int
+    currency: str
+    key_id: str
+
+
+class VerifyPaymentRequest(BaseModel):
+    ride_id: str
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Security
+from app.core.security import decode_token
+
+_security = HTTPBearer()
+
+
+@router.post("/{ride_id}/payment/create-order", response_model=CreateOrderResponse)
+async def create_payment_order(
+    ride_id: UUID,
+    credentials: HTTPAuthorizationCredentials = Security(_security),
+    db: Session = Depends(get_db),
+):
+    """Create a Razorpay order for a completed ride (callable by customer or driver)"""
+    import razorpay
+    from app.core.config import settings
+
+    payload = decode_token(credentials.credentials)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
+
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    if ride.status != "completed":
+        raise HTTPException(status_code=400, detail="Payment only for completed rides")
+
+    if ride.payment_status == "paid":
+        raise HTTPException(status_code=400, detail="Payment already completed")
+
+    client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+    amount_paise = int(round(ride.fare * 100))
+
+    order = client.order.create({
+        "amount": amount_paise,
+        "currency": "INR",
+        "receipt": f"ride_{ride_id}",
+        "notes": {"ride_id": str(ride_id)},
+    })
+
+    return {
+        "order_id": order["id"],
+        "amount": amount_paise,
+        "currency": "INR",
+        "key_id": settings.RAZORPAY_KEY_ID,
+    }
+
+
+@router.post("/{ride_id}/payment/verify")
+async def verify_payment(
+    ride_id: UUID,
+    payment_data: VerifyPaymentRequest,
+    credentials: HTTPAuthorizationCredentials = Security(_security),
+    db: Session = Depends(get_db),
+):
+    """Verify Razorpay payment signature and mark ride as paid"""
+    import razorpay
+    from app.core.config import settings
+
+    payload = decode_token(credentials.credentials)
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
+
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
+
+    try:
+        client.utility.verify_payment_signature({
+            "razorpay_order_id": payment_data.razorpay_order_id,
+            "razorpay_payment_id": payment_data.razorpay_payment_id,
+            "razorpay_signature": payment_data.razorpay_signature,
+        })
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payment verification failed")
+
+    ride.payment_status = "paid"
+    ride.payment_method = "online"
+    ride.transaction_id = payment_data.razorpay_payment_id
+    db.commit()
+
+    return {"message": "Payment verified successfully", "transaction_id": payment_data.razorpay_payment_id}
+
+
+@router.post("/{ride_id}/payment/cash")
+async def mark_cash_payment(
+    ride_id: UUID,
+    db: Session = Depends(get_db),
+):
+    """Mark ride as paid by cash (called by driver)"""
+    ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
+
+    if not ride:
+        raise HTTPException(status_code=404, detail="Ride not found")
+
+    if ride.status != "completed":
+        raise HTTPException(status_code=400, detail="Ride not completed yet")
+
+    ride.payment_status = "paid"
+    ride.payment_method = "cash"
+    db.commit()
+
+    return {"message": "Cash payment recorded"}

@@ -2,7 +2,24 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 
 
-# User Registration/Login
+# OTP-based auth
+class SendOTP(BaseModel):
+    phone: str = Field(..., min_length=10, max_length=15)
+
+
+class VerifyOTP(BaseModel):
+    phone: str = Field(..., min_length=10, max_length=15)
+    otp: str = Field(..., min_length=4, max_length=6)
+
+
+class CompleteProfile(BaseModel):
+    name: str = Field(..., min_length=2, max_length=100)
+    email: Optional[EmailStr] = None
+    emergency_contact_name: Optional[str] = Field(None, min_length=2, max_length=100)
+    emergency_contact_phone: Optional[str] = Field(None, min_length=10, max_length=15)
+
+
+# Legacy - kept for backward compatibility
 class UserRegister(BaseModel):
     phone: str = Field(..., min_length=10, max_length=15)
     name: str = Field(..., min_length=2, max_length=100)
@@ -13,11 +30,6 @@ class UserRegister(BaseModel):
 class UserLogin(BaseModel):
     phone: str = Field(..., min_length=10, max_length=15)
     password: str = Field(..., min_length=6)
-
-
-class VerifyOTP(BaseModel):
-    phone: str = Field(..., min_length=10, max_length=15)
-    otp: str = Field(..., min_length=6, max_length=6)
 
 
 # Driver Registration/Login

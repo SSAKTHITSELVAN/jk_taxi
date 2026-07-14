@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   ScrollView,
   KeyboardAvoidingView,
@@ -16,40 +17,26 @@ import { Button } from '../../src/components/common/Button';
 import { Input } from '../../src/components/common/Input';
 import { Card } from '../../src/components/common/Card';
 import { Colors, Spacing, FontSizes, FontWeights } from '../../src/constants/theme';
-import {
-  validatePhone,
-  validateEmail,
-  validatePassword,
-  validateName,
-} from '../../src/utils/validation';
+import { validatePhone, validateEmail, validateName } from '../../src/utils/validation';
 
-export default function RegisterScreen() {
+export default function CompleteProfileScreen() {
   const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [emergencyContactName, setEmergencyContactName] = useState('');
   const [emergencyContactPhone, setEmergencyContactPhone] = useState('');
   const [errors, setErrors] = useState({
     name: '',
-    phone: '',
     email: '',
-    password: '',
-    confirmPassword: '',
     emergencyContactName: '',
     emergencyContactPhone: '',
   });
 
-  const { register, isLoading, error, clearError } = useAuthStore();
+  const { completeProfile, isLoading, error, clearError } = useAuthStore();
 
   const validateForm = (): boolean => {
     const newErrors = {
       name: '',
-      phone: '',
       email: '',
-      password: '',
-      confirmPassword: '',
       emergencyContactName: '',
       emergencyContactPhone: '',
     };
@@ -60,32 +47,17 @@ export default function RegisterScreen() {
       isValid = false;
     }
 
-    if (!validatePhone(phone)) {
-      newErrors.phone = 'Please enter a valid 10-digit phone number';
-      isValid = false;
-    }
-
     if (email && !validateEmail(email)) {
       newErrors.email = 'Please enter a valid email address';
       isValid = false;
     }
 
-    if (!validatePassword(password)) {
-      newErrors.password = 'Password must be at least 6 characters';
+    if (emergencyContactName && !validateName(emergencyContactName)) {
+      newErrors.emergencyContactName = 'Name must be at least 2 characters';
       isValid = false;
     }
 
-    if (password !== confirmPassword) {
-      newErrors.confirmPassword = 'Passwords do not match';
-      isValid = false;
-    }
-
-    if (!validateName(emergencyContactName)) {
-      newErrors.emergencyContactName = 'Emergency contact name is required';
-      isValid = false;
-    }
-
-    if (!validatePhone(emergencyContactPhone)) {
+    if (emergencyContactPhone && !validatePhone(emergencyContactPhone)) {
       newErrors.emergencyContactPhone = 'Please enter a valid 10-digit phone number';
       isValid = false;
     }
@@ -94,19 +66,15 @@ export default function RegisterScreen() {
     return isValid;
   };
 
-  const handleRegister = async () => {
+  const handleComplete = async () => {
     if (!validateForm()) return;
 
     try {
       clearError();
-      await register(name, phone, email, password, emergencyContactName, emergencyContactPhone);
-      Alert.alert(
-        'Registration Successful!',
-        'Please verify your phone number with the OTP.',
-        [{ text: 'OK', onPress: () => router.push({ pathname: '/(auth)/verify-otp', params: { phone } }) }]
-      );
+      await completeProfile(name, email, emergencyContactName, emergencyContactPhone);
+      router.replace('/');
     } catch (err) {
-      Alert.alert('Registration Failed', error || 'Please try again');
+      Alert.alert('Error', error || 'Failed to save profile');
     }
   };
 
@@ -122,14 +90,16 @@ export default function RegisterScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <View style={styles.logoContainer}>
-              <Ionicons name="person-add" size={48} color={Colors.primary} />
-            </View>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Sign up to get started</Text>
+            <Image
+              source={require('../../assets/images/jk_taxi_logo_home_screen_.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+            <Text style={styles.title}>Complete Your Profile</Text>
+            <Text style={styles.subtitle}>Tell us a bit about yourself</Text>
           </View>
 
-          {/* Register Form */}
+          {/* Form */}
           <Card elevated style={styles.formCard}>
             <Input
               label="Full Name"
@@ -138,17 +108,6 @@ export default function RegisterScreen() {
               onChangeText={setName}
               icon="person-outline"
               error={errors.name}
-            />
-
-            <Input
-              label="Phone Number"
-              placeholder="Enter your phone number"
-              value={phone}
-              onChangeText={setPhone}
-              keyboardType="phone-pad"
-              maxLength={10}
-              icon="call-outline"
-              error={errors.phone}
             />
 
             <Input
@@ -162,31 +121,11 @@ export default function RegisterScreen() {
               error={errors.email}
             />
 
-            <Input
-              label="Password"
-              placeholder="Create a password"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              icon="lock-closed-outline"
-              error={errors.password}
-            />
-
-            <Input
-              label="Confirm Password"
-              placeholder="Confirm your password"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry
-              icon="lock-closed-outline"
-              error={errors.confirmPassword}
-            />
-
-            {/* Emergency Contact Section */}
+            {/* Emergency Contact */}
             <View style={styles.emergencySection}>
               <View style={styles.emergencyHeader}>
                 <Ionicons name="shield-checkmark" size={20} color={Colors.error} />
-                <Text style={styles.emergencySectionTitle}>Emergency Contact (Required)</Text>
+                <Text style={styles.emergencySectionTitle}>Emergency Contact (Optional)</Text>
               </View>
               <Text style={styles.emergencySectionSubtitle}>
                 For your safety during rides
@@ -213,25 +152,16 @@ export default function RegisterScreen() {
               error={errors.emergencyContactPhone}
             />
 
+            {error && <Text style={styles.errorText}>{error}</Text>}
+
             <Button
-              title="Sign Up"
-              onPress={handleRegister}
+              title="Get Started"
+              onPress={handleComplete}
               loading={isLoading}
               fullWidth
-              style={styles.registerButton}
+              style={styles.submitButton}
             />
           </Card>
-
-          {/* Login Link */}
-          <View style={styles.footer}>
-            <Text style={styles.footerText}>Already have an account?</Text>
-            <Button
-              title="Login"
-              variant="ghost"
-              size="small"
-              onPress={() => router.back()}
-            />
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -255,13 +185,9 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     marginBottom: Spacing.xl,
   },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
+  logo: {
+    width: 150,
+    height: 100,
     marginBottom: Spacing.md,
   },
   title: {
@@ -298,17 +224,13 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginLeft: Spacing.xl,
   },
-  registerButton: {
+  errorText: {
+    color: Colors.error,
+    fontSize: FontSizes.sm,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
+  },
+  submitButton: {
     marginTop: Spacing.md,
-  },
-  footer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Spacing.lg,
-  },
-  footerText: {
-    fontSize: FontSizes.md,
-    color: Colors.textSecondary,
   },
 });

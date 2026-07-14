@@ -1,28 +1,31 @@
 import apiClient from './client';
-import {
-  LoginCredentials,
-  RegisterData,
-  AuthResponse,
-  VerifyOTPData,
-  User,
-} from '../types';
+import { User, AuthResponse } from '../types';
+
+export interface OTPAuthResponse extends AuthResponse {
+  is_new_user: boolean;
+}
 
 export const authApi = {
-  // Register new user
-  register: async (data: RegisterData): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/api/auth/register', data);
+  // Send OTP to phone number
+  sendOTP: async (phone: string): Promise<{ message: string; otp_length: number }> => {
+    const response = await apiClient.post('/api/auth/send-otp', { phone });
     return response.data;
   },
 
-  // Login user
-  login: async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    const response = await apiClient.post<AuthResponse>('/api/auth/login', credentials);
+  // Verify OTP and get tokens
+  verifyOTP: async (phone: string, otp: string): Promise<OTPAuthResponse> => {
+    const response = await apiClient.post<OTPAuthResponse>('/api/auth/verify-otp', { phone, otp });
     return response.data;
   },
 
-  // Verify OTP
-  verifyOTP: async (data: VerifyOTPData): Promise<{ message: string }> => {
-    const response = await apiClient.post('/api/auth/verify-otp', data);
+  // Complete profile for new users
+  completeProfile: async (data: {
+    name: string;
+    email?: string;
+    emergency_contact_name?: string;
+    emergency_contact_phone?: string;
+  }): Promise<{ message: string }> => {
+    const response = await apiClient.put('/api/auth/complete-profile', data);
     return response.data;
   },
 

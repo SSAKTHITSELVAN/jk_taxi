@@ -21,6 +21,7 @@ import { driverEnhancedApi } from '../src/api/driver-enhanced';
 import { OTPVerificationModal } from '../src/components/OTPVerificationModal';
 import { DriverDrawer } from '../src/components/DriverDrawer';
 import { CancelRideModal } from '../src/components/CancelRideModal';
+import { PaymentCollectionModal } from '../src/components/PaymentCollectionModal';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
 import { EnhancedRide } from '../src/types/enhanced';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, ANIMATION_DURATION } from '../src/config/mapbox-config';
@@ -41,6 +42,9 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [completedRideFare, setCompletedRideFare] = useState(0);
+  const [completedRideId, setCompletedRideId] = useState('');
 
   // Map state
   const [driverLoc, setDriverLoc] = useState({ latitude: 12.9716, longitude: 77.5946 });
@@ -60,38 +64,39 @@ export default function HomeScreen() {
     fetchCurrentStatus();
   }, []);
 
-  // Ride polling
+  // Ride polling and location push when online
   useEffect(() => {
     if (isOnline) {
       loadRides();
+      startLocationPush();
       const interval = setInterval(loadRides, 8000);
-      return () => clearInterval(interval);
+      return () => {
+        clearInterval(interval);
+        stopLocationPush();
+      };
     } else {
       setActiveRide(null);
       setAvailableRides([]);
+      stopLocationPush();
     }
   }, [isOnline]);
 
-  // Location push when active ride
+  // Route tracking when active ride
   useEffect(() => {
     if (activeRide && (activeRide.status === 'accepted' || activeRide.status === 'started')) {
-      startLocationPush();
       hasInitializedCameraRef.current = false;
       setFollowUser(true);
-      // Initial route fetch with camera fit
       fetchRoute(true);
       setTimeout(() => {
         hasInitializedCameraRef.current = true;
         setFollowUser(true);
       }, 3000);
     } else {
-      stopLocationPush();
       setRouteCoords(null);
       setRouteInfo(null);
       hasInitializedCameraRef.current = false;
       setFollowUser(true);
     }
-    return () => stopLocationPush();
   }, [activeRide?.status, activeRide?.id]);
 
   // Update route when driver location changes (debounced, NO camera fit)
@@ -130,7 +135,10 @@ export default function HomeScreen() {
     const push = async () => {
       try {
         const { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if (status !== 'granted') {
+          router.replace('/location-permission' as any);
+          return;
+        }
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setDriverLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
         if (loc.coords.heading !== null && loc.coords.heading !== undefined) {
@@ -287,6 +295,19 @@ export default function HomeScreen() {
     }
   };
 
+  const showPaymentCollection = (rideId: string, fare: number) => {
+    setCompletedRideId(rideId);
+    setCompletedRideFare(fare);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentComplete = () => {
+    setShowPaymentModal(false);
+    setActiveRide(null);
+    setRouteCoords(null);
+    loadRides();
+  };
+
   const handleCompleteRide = async () => {
     if (!activeRide) return;
     Alert.alert('Complete Ride', 'Have you reached the destination?', [
@@ -294,13 +315,9 @@ export default function HomeScreen() {
       { text: 'Yes, Complete', onPress: async () => {
         try {
           await driverEnhancedApi.completeRide(activeRide.id);
-          Alert.alert('Ride Completed!', `Fare: ₹${Math.round(activeRide.fare)}\nGreat job!`);
-          setActiveRide(null);
-          setRouteCoords(null);
-          loadRides();
+          showPaymentCollection(activeRide.id, activeRide.fare);
         } catch (e: any) {
           const detail = e.response?.data?.detail || 'Failed to complete';
-          // If location check fails, offer force complete
           if (e.response?.status === 400 && detail.includes('km away')) {
             Alert.alert('Not at Destination', detail, [
               { text: 'OK', style: 'cancel' },
@@ -324,10 +341,7 @@ export default function HomeScreen() {
         { text: 'Yes, Complete', style: 'destructive', onPress: async () => {
           try {
             await driverEnhancedApi.forceCompleteRide(activeRide.id);
-            Alert.alert('Ride Completed!', `Fare: ₹${Math.round(activeRide.fare)}`);
-            setActiveRide(null);
-            setRouteCoords(null);
-            loadRides();
+            showPaymentCollection(activeRide.id, activeRide.fare);
           } catch (e: any) {
             Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
           }
@@ -739,6 +753,14 @@ export default function HomeScreen() {
         visible={showCancelModal}
         onClose={() => setShowCancelModal(false)}
         onConfirm={handleConfirmCancel}
+      />
+
+      {/* Payment Collection Modal */}
+      <PaymentCollectionModal
+        visible={showPaymentModal}
+        rideId={completedRideId}
+        fare={completedRideFare}
+        onComplete={handlePaymentComplete}
       />
 
       {/* Drawer Menu */}

@@ -13,27 +13,10 @@ export interface User {
 }
 
 // Auth types
-export interface LoginCredentials {
-  phone: string;
-  password: string;
-}
-
-export interface RegisterData {
-  phone: string;
-  name: string;
-  email?: string;
-  password: string;
-}
-
 export interface AuthResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
-}
-
-export interface VerifyOTPData {
-  phone: string;
-  otp: string;
 }
 
 // Ride/Booking types

@@ -163,21 +163,39 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
     );
   };
 
-  const handlePayment = () => {
-    Alert.alert(
-      'Payment',
-      `Total Amount: ₹${ride.fare.toFixed(2)}\n\nPayment Method: ${ride.payment_method === 'cash' ? 'Cash' : 'Online'}`,
-      [
-        { text: 'OK' },
-        ride.payment_method === 'online' && {
-          text: 'Pay Now',
-          onPress: () => {
-            // Navigate to payment screen
-            Alert.alert('Payment', 'Payment gateway integration pending');
-          },
+  const handlePayment = async () => {
+    try {
+      const orderData = await bookingEnhancedApi.createPaymentOrder(ride.id);
+      const RazorpayCheckout = require('react-native-razorpay').default;
+
+      const options = {
+        description: `JK Taxi - Ride Payment`,
+        image: 'https://jktaxitamilnadu.com/icon.png',
+        currency: orderData.currency,
+        key: orderData.key_id,
+        amount: orderData.amount,
+        name: 'JK Taxi',
+        order_id: orderData.order_id,
+        prefill: {
+          contact: ride.customer?.phone || '',
+          name: ride.customer?.name || '',
         },
-      ].filter(Boolean) as any
-    );
+        theme: { color: '#8B5CF6' },
+      };
+
+      const paymentResult = await RazorpayCheckout.open(options);
+      await bookingEnhancedApi.verifyPayment(ride.id, {
+        razorpay_order_id: orderData.order_id,
+        razorpay_payment_id: paymentResult.razorpay_payment_id,
+        razorpay_signature: paymentResult.razorpay_signature,
+      });
+      Alert.alert('Payment Successful', `₹${(orderData.amount / 100).toFixed(0)} paid successfully!`);
+    } catch (error: any) {
+      if (error?.code === 'PAYMENT_CANCELLED') {
+        return;
+      }
+      Alert.alert('Payment Failed', error?.description || error?.message || 'Please try again');
+    }
   };
 
   const handleSubmitRating = () => {

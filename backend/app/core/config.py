@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     # Static OTP
     STATIC_OTP: str = "123456"
 
+    # TeleSign OTP
+    TELESIGN_CUSTOMER_ID: str = "1A1EC314-FC79-4E15-BBFF-C17A9030FF3A"
+    TELESIGN_API_KEY: str = "sh1yhg1g15ZLvkjTIKrUtWK2xG+D0SpP2QjxLRXAQjsSNEcvOOWTz8n+ZBOs2BY3Ff1zjslms0xLYhY5EBRiRw=="
+
+    # Razorpay
+    RAZORPAY_KEY_ID: str = "rzp_test_TBjnIUaVrr5q2P"
+    RAZORPAY_KEY_SECRET: str = "c4sXs7vA2kcQH2mGPvtRNYEq"
+
     # CORS
     ALLOWED_ORIGINS: str = '["http://localhost:3000","http://localhost:8081"]'
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import storage from '../utils/storage';
-import { User, AuthResponse } from '../types';
-import { authApi } from '../api/auth';
+import { User } from '../types';
+import { authApi, OTPAuthResponse } from '../api/auth';
 import { setApiToken, clearApiToken, setLogoutCallback } from '../api/client';
 
 interface AuthState {
@@ -12,24 +12,31 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
 
+  // OTP flow state
+  otpSent: boolean;
+  otpPhone: string | null;
+  isNewUser: boolean;
+
   // Actions
-  login: (phone: string, password: string) => Promise<void>;
-  register: (name: string, phone: string, email: string, password: string, emergencyContactName?: string, emergencyContactPhone?: string) => Promise<void>;
+  sendOTP: (phone: string) => Promise<void>;
+  verifyOTP: (phone: string, otp: string) => Promise<boolean>;
+  completeProfile: (name: string, email?: string, emergencyContactName?: string, emergencyContactPhone?: string) => Promise<void>;
   logout: () => Promise<void>;
   loadUser: () => Promise<void>;
   clearError: () => void;
-  setTokens: (tokens: AuthResponse) => Promise<void>;
+  resetOTPState: () => void;
 }
 
 export const useAuthStore = create<AuthState>((set, get) => {
-  // Register logout callback with API client
   setLogoutCallback(() => {
-    // This will be called when API returns 401
     set({
       user: null,
       accessToken: null,
       refreshToken: null,
       isAuthenticated: false,
+      otpSent: false,
+      otpPhone: null,
+      isNewUser: false,
     });
   });
 
@@ -40,128 +47,133 @@ export const useAuthStore = create<AuthState>((set, get) => {
     isAuthenticated: false,
     isLoading: true,
     error: null,
+    otpSent: false,
+    otpPhone: null,
+    isNewUser: false,
 
-  setTokens: async (tokens: AuthResponse) => {
-    // Set token in memory FIRST for immediate use
-    setApiToken(tokens.access_token);
-
-    // Store tokens (with automatic fallback)
-    await storage.setItem('access_token', tokens.access_token);
-    await storage.setItem('refresh_token', tokens.refresh_token);
-
-    set({
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token,
-      isAuthenticated: true,
-    });
-  },
-
-  login: async (phone: string, password: string) => {
-    try {
-      set({ isLoading: true, error: null });
-      const response = await authApi.login({ phone, password });
-
-      // Set token in memory FIRST before profile request
-      setApiToken(response.access_token);
-
-      // Store tokens (with automatic fallback)
-      await storage.setItem('access_token', response.access_token);
-      await storage.setItem('refresh_token', response.refresh_token);
-
-      // Load user profile (will now use in-memory token)
-      const user = await authApi.getProfile();
-      await storage.setItem('user', JSON.stringify(user));
-
-      set({
-        user,
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch (error: any) {
-      set({
-        error: error.response?.data?.detail || 'Login failed',
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
-
-  register: async (name: string, phone: string, email: string, password: string, emergencyContactName?: string, emergencyContactPhone?: string) => {
-    try {
-      set({ isLoading: true, error: null });
-      const response = await authApi.register({
-        name,
-        phone,
-        email,
-        password,
-        emergency_contact_name: emergencyContactName,
-        emergency_contact_phone: emergencyContactPhone,
-      });
-
-      // Set token in memory FIRST before profile request
-      setApiToken(response.access_token);
-
-      // Store tokens (with automatic fallback)
-      await storage.setItem('access_token', response.access_token);
-      await storage.setItem('refresh_token', response.refresh_token);
-
-      // Load user profile (will now use in-memory token)
-      const user = await authApi.getProfile();
-      await storage.setItem('user', JSON.stringify(user));
-
-      set({
-        user,
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        isAuthenticated: true,
-        isLoading: false,
-      });
-    } catch (error: any) {
-      set({
-        error: error.response?.data?.detail || 'Registration failed',
-        isLoading: false,
-      });
-      throw error;
-    }
-  },
-
-  logout: async () => {
-    clearApiToken();
-    await storage.multiRemove(['access_token', 'refresh_token', 'user']);
-    set({
-      user: null,
-      accessToken: null,
-      refreshToken: null,
-      isAuthenticated: false,
-    });
-  },
-
-  loadUser: async () => {
-    try {
-      set({ isLoading: true });
-      const token = await storage.getItem('access_token');
-      const userStr = await storage.getItem('user');
-
-      if (token && userStr) {
-        const user = JSON.parse(userStr);
-        setApiToken(token);
+    sendOTP: async (phone: string) => {
+      try {
+        set({ isLoading: true, error: null });
+        await authApi.sendOTP(phone);
+        set({ otpSent: true, otpPhone: phone, isLoading: false });
+      } catch (error: any) {
         set({
-          user,
-          accessToken: token,
-          isAuthenticated: true,
+          error: error.response?.data?.detail || 'Failed to send OTP',
           isLoading: false,
         });
-      } else {
+        throw error;
+      }
+    },
+
+    verifyOTP: async (phone: string, otp: string) => {
+      try {
+        set({ isLoading: true, error: null });
+        const response: OTPAuthResponse = await authApi.verifyOTP(phone, otp);
+
+        setApiToken(response.access_token);
+        await storage.setItem('access_token', response.access_token);
+        await storage.setItem('refresh_token', response.refresh_token);
+
+        set({
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          isNewUser: response.is_new_user,
+        });
+
+        if (!response.is_new_user) {
+          const user = await authApi.getProfile();
+          await storage.setItem('user', JSON.stringify(user));
+          set({
+            user,
+            isAuthenticated: true,
+            isLoading: false,
+            otpSent: false,
+            otpPhone: null,
+          });
+        } else {
+          set({ isLoading: false });
+        }
+
+        return response.is_new_user;
+      } catch (error: any) {
+        set({
+          error: error.response?.data?.detail || 'Invalid OTP',
+          isLoading: false,
+        });
+        throw error;
+      }
+    },
+
+    completeProfile: async (name: string, email?: string, emergencyContactName?: string, emergencyContactPhone?: string) => {
+      try {
+        set({ isLoading: true, error: null });
+        await authApi.completeProfile({
+          name,
+          email: email || undefined,
+          emergency_contact_name: emergencyContactName || undefined,
+          emergency_contact_phone: emergencyContactPhone || undefined,
+        });
+
+        const user = await authApi.getProfile();
+        await storage.setItem('user', JSON.stringify(user));
+
+        set({
+          user,
+          isAuthenticated: true,
+          isLoading: false,
+          isNewUser: false,
+          otpSent: false,
+          otpPhone: null,
+        });
+      } catch (error: any) {
+        set({
+          error: error.response?.data?.detail || 'Failed to update profile',
+          isLoading: false,
+        });
+        throw error;
+      }
+    },
+
+    logout: async () => {
+      clearApiToken();
+      await storage.multiRemove(['access_token', 'refresh_token', 'user']);
+      set({
+        user: null,
+        accessToken: null,
+        refreshToken: null,
+        isAuthenticated: false,
+        otpSent: false,
+        otpPhone: null,
+        isNewUser: false,
+      });
+    },
+
+    loadUser: async () => {
+      try {
+        set({ isLoading: true });
+        const token = await storage.getItem('access_token');
+        const userStr = await storage.getItem('user');
+
+        if (token && userStr) {
+          const user = JSON.parse(userStr);
+          setApiToken(token);
+          set({
+            user,
+            accessToken: token,
+            isAuthenticated: true,
+            isLoading: false,
+          });
+        } else {
+          set({ isLoading: false });
+        }
+      } catch (error) {
+        console.log('⚠️  Storage error during load:', error);
         set({ isLoading: false });
       }
-    } catch (error) {
-      console.log('⚠️  Storage error during load:', error);
-      set({ isLoading: false });
-    }
-  },
+    },
 
     clearError: () => set({ error: null }),
+
+    resetOTPState: () => set({ otpSent: false, otpPhone: null, isNewUser: false, error: null }),
   };
 });

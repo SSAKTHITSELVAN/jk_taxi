@@ -346,7 +346,7 @@ async def complete_ride(
             )
 
     ride.status = "completed"
-    ride.payment_status = "completed"
+    ride.payment_status = "pending"
     db.commit()
     db.refresh(ride)
 

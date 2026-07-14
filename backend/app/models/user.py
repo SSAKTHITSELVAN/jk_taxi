@@ -18,7 +18,7 @@ class User(Base):
     phone = Column(String(15), unique=True, index=True, nullable=False)
     name = Column(String(100), nullable=False)
     email = Column(String(255), unique=True, index=True, nullable=True)
-    password_hash = Column(String(255), nullable=False)
+    password_hash = Column(String(255), nullable=True)
     emergency_contact_name = Column(String(100), nullable=True)
     emergency_contact_phone = Column(String(15), nullable=True)
 
