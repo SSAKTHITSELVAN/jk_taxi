@@ -73,8 +73,8 @@ export const MapboxTaxiMap: React.FC<MapboxTaxiMapProps> = ({
       onPress={handleMapPress}
       compassEnabled
       scaleBarEnabled={false}
-      attributionEnabled={false}
-      logoEnabled={false}
+      attributionEnabled={true}
+      logoEnabled={true}
     >
       <Mapbox.Camera
         ref={cameraRef}

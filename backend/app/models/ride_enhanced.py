@@ -83,6 +83,11 @@ class RideEnhanced(Base):
     status = Column(String(50), default="pending", nullable=False, index=True)
     rejection_count = Column(Integer, default=0)  # Number of drivers who rejected this ride
 
+    # Sequential one-by-one dispatch
+    offered_driver_id = Column(UUID(as_uuid=True), ForeignKey("drivers.id"), nullable=True, index=True)
+    offer_started_at = Column(DateTime(timezone=True), nullable=True)  # exclusive offer window start
+    dispatch_started_at = Column(DateTime(timezone=True), nullable=True)  # overall search clock
+
     # Fare Breakdown
     base_fare = Column(Float, default=0.0)
     distance_fare = Column(Float, default=0.0)
@@ -100,12 +105,21 @@ class RideEnhanced(Base):
 
     # Cancellation
     cancellation_reason = Column(String(255), nullable=True)
+    cancellation_fee = Column(Float, default=0.0)
+
+    # Surge multiplier applied at booking (1.0 = none)
+    surge_multiplier = Column(Float, default=1.0)
 
     # Distance (in km)
     distance_km = Column(Float, default=0.0)
 
     # ETA (in minutes)
     eta_minutes = Column(Integer, default=5)
+
+    # Road-network route (Mapbox GeoJSON coordinates [[lng,lat], ...] or null)
+    route_geometry = Column(JSON, nullable=True)
+    route_duration_seconds = Column(Float, nullable=True)
+    route_source = Column(String(20), nullable=True)  # mapbox | haversine
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

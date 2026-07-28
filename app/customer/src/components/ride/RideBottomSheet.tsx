@@ -18,6 +18,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { EnhancedRide } from '../../types/enhanced';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
 import { bookingEnhancedApi } from '../../api/booking-enhanced';
+import { useAuthStore } from '../../store/authStore';
 
 const { height } = Dimensions.get('window');
 const MIN_HEIGHT = 280;
@@ -38,6 +39,9 @@ const CANCEL_REASONS = [
 ];
 
 export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideComplete, liveEta }) => {
+  const { user } = useAuthStore();
+  // Rapido-style: one OTP per user for every ride
+  const displayOtp = user?.ride_otp || ride.ride_otp;
   const [nearbyCount, setNearbyCount] = useState(0);
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
@@ -141,15 +145,53 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
   };
 
   const handleSOS = () => {
-    Alert.alert('Emergency SOS', 'Call emergency services?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Call 112', style: 'destructive', onPress: () => Linking.openURL('tel:112') },
-    ]);
+    Alert.alert(
+      'Emergency SOS',
+      'This will alert JK Taxi safety ops, dial emergency services, and notify your emergency contact.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Call 112 + Notify',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const res = await bookingEnhancedApi.triggerSOS(ride.id);
+              if (res.emergency_contact_phone) {
+                Linking.openURL(`tel:${res.emergency_contact_phone}`).catch(() => undefined);
+              }
+            } catch {
+              // still dial emergency even if API fails
+            }
+            Linking.openURL('tel:112').catch(() =>
+              Alert.alert('Error', 'Unable to dial. Call 112 manually.')
+            );
+          },
+        },
+      ]
+    );
   };
 
-  const handleSubmitRating = () => {
+  const handleShareTrip = async () => {
+    try {
+      const share = await bookingEnhancedApi.createTripShare(ride.id);
+      Alert.alert(
+        'Trip Share Link',
+        `Share this link with family:\n${share.share_path}\n\n(Token: ${share.share_token})`,
+        [{ text: 'OK' }]
+      );
+    } catch (e: any) {
+      Alert.alert('Share failed', e.response?.data?.detail || 'Could not create share link');
+    }
+  };
+
+  const handleSubmitRating = async () => {
     if (rating === 0) { Alert.alert('Required', 'Please select a rating.'); return; }
-    Alert.alert('Thank You!', 'Rating submitted.', [{ text: 'OK', onPress: onRideComplete }]);
+    try {
+      await bookingEnhancedApi.submitRating(ride.id, rating);
+      Alert.alert('Thank You!', 'Your rating was saved.', [{ text: 'OK', onPress: onRideComplete }]);
+    } catch (e: any) {
+      Alert.alert('Failed', e.response?.data?.detail || 'Could not submit rating');
+    }
   };
 
   const getStatusConfig = () => {
@@ -320,8 +362,8 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
           {/* OTP + Fare row */}
           <View style={styles.infoRow}>
             <View style={styles.otpBox}>
-              <Text style={styles.otpLabel}>OTP</Text>
-              <Text style={styles.otpValue}>{ride.ride_otp}</Text>
+              <Text style={styles.otpLabel}>Your OTP</Text>
+              <Text style={styles.otpValue}>{displayOtp}</Text>
             </View>
             <View style={styles.fareBox}>
               <Text style={styles.fareLabel}>Fare</Text>
@@ -353,6 +395,12 @@ export const RideBottomSheet: React.FC<RideBottomSheetProps> = ({ ride, onRideCo
           {/* Actions */}
           {!showRating && ride.status !== 'completed' && ride.status !== 'cancelled' && (
             <View style={styles.actions}>
+              {(ride.status === 'accepted' || ride.status === 'started') && (
+                <TouchableOpacity style={styles.shareBtn} onPress={handleShareTrip}>
+                  <Ionicons name="share-social" size={18} color={Colors.primary} />
+                  <Text style={styles.shareBtnText}>Share</Text>
+                </TouchableOpacity>
+              )}
               {ride.status === 'started' && (
                 <TouchableOpacity style={styles.sosBtn} onPress={handleSOS}>
                   <Ionicons name="warning" size={18} color="#FFF" />
@@ -507,6 +555,8 @@ const styles = StyleSheet.create({
   // Actions
   actions: { flexDirection: 'row', gap: 10, marginTop: Spacing.md },
   sosBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#EF4444', paddingVertical: 12, borderRadius: 10, gap: 6 },
+  shareBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3E8FF', paddingVertical: 12, borderRadius: 10, gap: 6, borderWidth: 1, borderColor: Colors.primary },
+  shareBtnText: { color: Colors.primary, fontWeight: '700' as const, fontSize: 14 },
   sosBtnText: { color: '#FFF', fontSize: FontSizes.sm, fontWeight: FontWeights.bold },
   cancelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEE2E2', paddingVertical: 12, borderRadius: 10, borderWidth: 1, borderColor: '#EF4444', gap: 6 },
   cancelBtnText: { color: '#EF4444', fontSize: FontSizes.sm, fontWeight: FontWeights.bold },

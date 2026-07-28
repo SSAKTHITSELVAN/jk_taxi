@@ -58,6 +58,15 @@ export const EnhancedRideCard: React.FC<EnhancedRideCardProps> = ({
         </View>
       </View>
 
+      {typeof ride.offer_remaining_seconds === 'number' && (
+        <View style={styles.offerTimer}>
+          <Ionicons name="timer-outline" size={14} color={Colors.warning} />
+          <Text style={styles.offerTimerText}>
+            Offer expires in {Math.max(0, Math.ceil(ride.offer_remaining_seconds / 60))} min
+          </Text>
+        </View>
+      )}
+
       {/* Passenger Info (if booking for someone else) */}
       {!ride.booking_for_self && (
         <View style={styles.passengerInfo}>
@@ -129,6 +138,12 @@ export const EnhancedRideCard: React.FC<EnhancedRideCardProps> = ({
               <View style={styles.preferenceTag}>
                 <Ionicons name="accessibility" size={12} color={Colors.primary} />
                 <Text style={styles.preferenceText}>Wheelchair</Text>
+              </View>
+            )}
+            {(ride.preferences as any).women_driver && (
+              <View style={styles.preferenceTag}>
+                <Ionicons name="woman" size={12} color={Colors.primary} />
+                <Text style={styles.preferenceText}>Women</Text>
               </View>
             )}
           </View>
@@ -216,6 +231,17 @@ const styles = StyleSheet.create({
   fareLabel: {
     fontSize: FontSizes.xs,
     color: Colors.textSecondary,
+  },
+  offerTimer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: Spacing.sm,
+  },
+  offerTimerText: {
+    fontSize: FontSizes.xs,
+    color: Colors.warning,
+    fontWeight: FontWeights.medium,
   },
   passengerInfo: {
     flexDirection: 'row',

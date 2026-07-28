@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,6 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import * as Location from 'expo-location';
 import { driverEnhancedApi } from '../src/api/driver-enhanced';
 import { OTPVerificationModal } from '../src/components/OTPVerificationModal';
 import { EnhancedRideCard } from '../src/components/EnhancedRideCard';
@@ -17,6 +16,8 @@ import { Button } from '../src/components/common/Button';
 import { Card } from '../src/components/common/Card';
 import { Colors, Spacing, FontSizes, FontWeights } from '../src/constants/theme';
 import { EnhancedRide } from '../src/types/enhanced';
+import { driverLocationService } from '../src/services/locationTracking';
+import { BottomNav } from '../src/components/navigation/BottomNav';
 
 export default function RidesEnhancedScreen() {
   const [availableRides, setAvailableRides] = useState<EnhancedRide[]>([]);
@@ -24,8 +25,6 @@ export default function RidesEnhancedScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showOTPModal, setShowOTPModal] = useState(false);
-
-  const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     loadRides();
@@ -36,26 +35,14 @@ export default function RidesEnhancedScreen() {
   // Push location to server when ride is active
   useEffect(() => {
     if (activeRide && (activeRide.status === 'accepted' || activeRide.status === 'started')) {
-      const pushLocation = async () => {
-        try {
-          const { status } = await Location.getForegroundPermissionsAsync();
-          if (status !== 'granted') return;
-          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-          await driverEnhancedApi.updateLocation(loc.coords.latitude, loc.coords.longitude);
-        } catch {}
+      driverLocationService.setActiveRideId(activeRide.id);
+      driverLocationService.start().catch(() => undefined);
+      return () => {
+        driverLocationService.stop().catch(() => undefined);
       };
-      pushLocation();
-      locationIntervalRef.current = setInterval(pushLocation, 5000);
-    } else {
-      if (locationIntervalRef.current) {
-        clearInterval(locationIntervalRef.current);
-        locationIntervalRef.current = null;
-      }
     }
-    return () => {
-      if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
-    };
-  }, [activeRide?.status]);
+    driverLocationService.setActiveRideId(null);
+  }, [activeRide?.id, activeRide?.status]);
 
   const loadRides = async () => {
     try {
@@ -271,6 +258,7 @@ export default function RidesEnhancedScreen() {
           onClose={() => setShowOTPModal(false)}
         />
       )}
+      <BottomNav />
     </SafeAreaView>
   );
 }

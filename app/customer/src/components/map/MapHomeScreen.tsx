@@ -19,7 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MapboxMap } from './MapboxMap';
+import { FleetMap } from './FleetMap';
+import { FleetCategory } from './VehicleMarker';
 import { RideTrackingMap } from './RideTrackingMap';
 import { RideBottomSheet } from '../ride/RideBottomSheet';
 import { useAuthStore } from '../../store/authStore';
@@ -62,6 +63,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
 
   const [floatingBarActive, setFloatingBarActive] = useState(false);
   const floatingBarOpacity = useRef(new Animated.Value(0.45)).current;
+  const [fleetFilter, setFleetFilter] = useState<FleetCategory>('all');
 
   const menuSlideAnim = useRef(new Animated.Value(-320)).current;
 
@@ -304,19 +306,22 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
       {/* Map: tracking view or normal */}
       {isTrackingRide ? (
         <RideTrackingMap
+          key={`${activeRide.id}-${activeRide.status}`}
           rideStatus={activeRide.status as 'pending' | 'accepted' | 'started'}
           pickupLocation={{ latitude: (activeRide as any).pickup_lat, longitude: (activeRide as any).pickup_lng }}
           dropoffLocation={(activeRide as any).dropoff_lat ? { latitude: (activeRide as any).dropoff_lat, longitude: (activeRide as any).dropoff_lng } : null}
           driverLocation={driverLocation}
+          vehicleCategory={(activeRide as any).vehicle_category}
           onEtaUpdate={(dist, dur) => setLiveEta({ distance: dist, duration: dur })}
         />
       ) : (
-        <MapboxMap
+        <FleetMap
           latitude={location.latitude}
           longitude={location.longitude}
-          showMarker={true}
-          markerTitle={locationName}
           zoom={14}
+          vehicleFilter={fleetFilter}
+          onVehicleFilterChange={setFleetFilter}
+          showFilterChips
         />
       )}
 
@@ -382,7 +387,7 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
             </View>
           </View>
           <TouchableOpacity onPress={toggleMenu} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#FFFFFF" />
+            <Ionicons name="close" size={28} color={Colors.ink} />
           </TouchableOpacity>
         </View>
 
@@ -605,9 +610,15 @@ export const MapHomeScreen: React.FC<MapHomeScreenProps> = ({ onBookRide }) => {
           ) : (
             <>
               <Text style={styles.bookingPrompt}>Where to?</Text>
-              <TouchableOpacity style={styles.searchBox} onPress={onBookRide}>
-                <Ionicons name="search" size={22} color="#000000" />
-                <Text style={styles.searchText}>Search destination</Text>
+              <Text style={styles.bookingSubprompt}>Book a JK Taxi in seconds</Text>
+              <TouchableOpacity style={styles.searchBox} onPress={onBookRide} activeOpacity={0.85}>
+                <View style={styles.searchIconWrap}>
+                  <Ionicons name="search" size={18} color={Colors.white} />
+                </View>
+                <Text style={styles.searchText}>Enter destination</Text>
+                <View style={styles.bookNowPill}>
+                  <Text style={styles.bookNowText}>Book</Text>
+                </View>
               </TouchableOpacity>
 
               {/* Saved Places */}
@@ -733,10 +744,12 @@ const styles = StyleSheet.create({
     zIndex: 10000,
   },
   menuHeader: {
-    backgroundColor: Colors.primary,
-    paddingTop: 60,
+    backgroundColor: Colors.primarySoft,
+    paddingTop: Platform.OS === 'ios' ? 56 : 44,
     paddingBottom: Spacing.lg,
     paddingHorizontal: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   menuHeaderContent: {
     flexDirection: 'row',
@@ -747,7 +760,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
@@ -755,7 +768,7 @@ const styles = StyleSheet.create({
   userAvatarText: {
     fontSize: 24,
     fontWeight: FontWeights.bold,
-    color: '#FFFFFF',
+    color: Colors.white,
   },
   userInfo: {
     flex: 1,
@@ -763,13 +776,12 @@ const styles = StyleSheet.create({
   menuUserName: {
     fontSize: FontSizes.xl,
     fontWeight: FontWeights.bold,
-    color: '#FFFFFF',
+    color: Colors.ink,
     marginBottom: 4,
   },
   menuUserPhone: {
     fontSize: FontSizes.md,
-    color: '#FFFFFF',
-    opacity: 0.95,
+    color: Colors.inkSecondary,
   },
   closeButton: {
     position: 'absolute',
@@ -908,39 +920,68 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    bottom: 0,
-    backgroundColor: Colors.white,
+    bottom: 88,
+    backgroundColor: Colors.sheet,
     borderTopLeftRadius: BorderRadius.xl,
     borderTopRightRadius: BorderRadius.xl,
-    padding: Spacing.md,
-    paddingBottom: Platform.OS === 'ios' ? 24 : Spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.lg,
+    shadowColor: '#1A1B2E',
+    shadowOffset: { width: 0, height: -8 },
     shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 10,
+    shadowRadius: 18,
+    elevation: 14,
+    borderTopWidth: 0,
   },
   bookingPrompt: {
-    fontSize: FontSizes.lg,
+    fontSize: 26,
     fontWeight: FontWeights.bold,
-    color: '#000000',
-    marginBottom: Spacing.sm,
+    color: Colors.ink,
+    letterSpacing: -0.4,
+  },
+  bookingSubprompt: {
+    fontSize: FontSizes.sm,
+    color: Colors.textMuted,
+    marginBottom: Spacing.md,
+    marginTop: 2,
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#F8FAFC',
     borderRadius: BorderRadius.xl,
-    padding: Spacing.md,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.md,
     marginBottom: Spacing.sm,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  searchIconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   searchText: {
+    flex: 1,
     fontSize: FontSizes.md,
-    color: '#666666',
+    color: '#64748B',
     marginLeft: Spacing.sm,
     fontWeight: FontWeights.medium,
+  },
+  bookNowPill: {
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.full,
+  },
+  bookNowText: {
+    color: Colors.white,
+    fontWeight: FontWeights.bold,
+    fontSize: FontSizes.sm,
   },
   savedPlacesRow: {
     flexDirection: 'row',

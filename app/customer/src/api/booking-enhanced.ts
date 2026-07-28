@@ -71,10 +71,29 @@ export const bookingEnhancedApi = {
     return response.data;
   },
 
-  // Get nearby drivers locations for map display
-  getNearbyDriversLocations: async (lat: number, lng: number): Promise<{ drivers: Array<{ id: string; latitude: number; longitude: number; vehicle_type: string }> }> => {
-    const response = await apiClient.get('/api/v2/bookings/nearby-drivers/locations', { params: { lat, lng } });
-    console.log('[NearbyDrivers API] lat:', lat, 'lng:', lng, 'response:', JSON.stringify(response.data));
+  // Get nearby drivers locations for map display (optional category / women filter)
+  getNearbyDriversLocations: async (
+    lat: number,
+    lng: number,
+    opts?: { vehicle_category?: string; women_only?: boolean }
+  ): Promise<{
+    drivers: Array<{
+      id: string;
+      latitude: number;
+      longitude: number;
+      vehicle_type: string;
+      category?: string;
+      gender?: string | null;
+    }>;
+  }> => {
+    const response = await apiClient.get('/api/v2/bookings/nearby-drivers/locations', {
+      params: {
+        lat,
+        lng,
+        vehicle_category: opts?.vehicle_category || undefined,
+        women_only: opts?.women_only ? true : undefined,
+      },
+    });
     return response.data;
   },
 
@@ -84,6 +103,11 @@ export const bookingEnhancedApi = {
     status: string;
     driver_lat: number | null;
     driver_lng: number | null;
+    heading?: number | null;
+    speed?: number | null;
+    accuracy?: number | null;
+    sequence?: number | null;
+    location_updated_at?: string | null;
     pickup_lat: number;
     pickup_lng: number;
     dropoff_lat: number | null;
@@ -114,6 +138,26 @@ export const bookingEnhancedApi = {
       ride_id: rideId,
       ...data,
     });
+    return response.data;
+  },
+
+  submitRating: async (rideId: string, rating: number, comment?: string) => {
+    const response = await apiClient.post(`/api/v2/safety/rides/${rideId}/rating`, {
+      rating,
+      comment,
+    });
+    return response.data;
+  },
+
+  triggerSOS: async (rideId: string, data?: { latitude?: number; longitude?: number; note?: string }) => {
+    const response = await apiClient.post(`/api/v2/safety/rides/${rideId}/sos`, data || {});
+    return response.data;
+  },
+
+  createTripShare: async (rideId: string) => {
+    const response = await apiClient.post<{ share_token: string; share_path: string; ride_id: string }>(
+      `/api/v2/safety/rides/${rideId}/trip-share`
+    );
     return response.data;
   },
 };

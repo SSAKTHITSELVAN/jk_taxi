@@ -10,6 +10,8 @@ export enum TripType {
 }
 
 export enum VehicleCategory {
+  BIKE = "bike",
+  AUTO = "auto",
   MINI = "mini",
   SEDAN = "sedan",
   SUV = "suv",
@@ -43,12 +45,15 @@ export interface RidePreferences {
   silent_ride: boolean;
   extra_luggage: boolean;
   wheelchair_support: boolean;
+  women_driver: boolean;
 }
 
 export interface FareBreakdown {
   base_fare: number;
   distance_fare: number;
   distance_km?: number;
+  duration_minutes?: number;
+  route_source?: string;
   platform_fee: number;
   gst: number;
   toll_charges: number;

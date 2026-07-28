@@ -1,7 +1,12 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_ACCESS_TOKEN } from '../config/mapbox-config';
+import { RouteProgressLayers } from './map/RouteProgressLayers';
+import {
+  splitRouteProgress,
+  type LngLat,
+} from '../utils/routeProgress';
 
 interface NavigationMapProps {
   driverLocation: { latitude: number; longitude: number };
@@ -26,57 +31,76 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
 }) => {
   const cameraRef = useRef<Mapbox.Camera>(null);
   const mapRef = useRef<Mapbox.MapView>(null);
+  const [fullRoute, setFullRoute] = useState<LngLat[] | null>(
+    (routeCoordinates as LngLat[] | undefined) || null
+  );
+  const fetchingRef = useRef(false);
+  const lastRerouteAtRef = useRef(0);
+  const lastDestRef = useRef(`${destinationLocation.latitude},${destinationLocation.longitude}`);
 
-  // Fetch route from Mapbox Directions API
-  useEffect(() => {
-    const fetchRoute = async () => {
-      try {
-        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLocation.longitude},${driverLocation.latitude};${destinationLocation.longitude},${destinationLocation.latitude}?geometries=geojson&overview=full&steps=true&banner_instructions=true&voice_instructions=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
+  const fetchRoute = async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    try {
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLocation.longitude},${driverLocation.latitude};${destinationLocation.longitude},${destinationLocation.latitude}?geometries=geojson&overview=full&steps=true&banner_instructions=true&voice_instructions=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
-        const response = await fetch(url);
-        const data = await response.json();
+      const response = await fetch(url);
+      const data = await response.json();
 
-        if (data.routes?.[0]) {
-          const route = data.routes[0];
-          const coords = route.geometry.coordinates;
-          const distance = route.distance / 1000; // km
-          const duration = route.duration / 60; // minutes
+      if (data.routes?.[0]) {
+        const route = data.routes[0];
+        const coords = route.geometry.coordinates as LngLat[];
+        setFullRoute(coords);
+        onRouteUpdate?.(coords, route.distance / 1000, route.duration / 60);
 
-          if (onRouteUpdate) {
-            onRouteUpdate(coords, distance, duration);
-          }
-
-          // Auto-fit camera to show entire route
-          if (cameraRef.current) {
-            const lngs = coords.map((c: number[]) => c[0]);
-            const lats = coords.map((c: number[]) => c[1]);
-
-            const ne = [Math.max(...lngs), Math.max(...lats)];
-            const sw = [Math.min(...lngs), Math.min(...lats)];
-
-            // Padding: [top, right, bottom, left]
-            cameraRef.current.fitBounds(ne, sw, [150, 60, 450, 60], 1500);
-          }
+        if (cameraRef.current) {
+          const lngs = coords.map((c) => c[0]);
+          const lats = coords.map((c) => c[1]);
+          const ne = [Math.max(...lngs), Math.max(...lats)];
+          const sw = [Math.min(...lngs), Math.min(...lats)];
+          cameraRef.current.fitBounds(ne, sw, [150, 60, 450, 60], 1500);
         }
-      } catch (error) {
-        console.error('Error fetching route:', error);
       }
-    };
+    } catch (error) {
+      console.error('Error fetching route:', error);
+    } finally {
+      fetchingRef.current = false;
+    }
+  };
 
+  // Fresh route when destination changes
+  useEffect(() => {
+    const key = `${destinationLocation.latitude},${destinationLocation.longitude}`;
+    if (key !== lastDestRef.current || !fullRoute) {
+      lastDestRef.current = key;
+      fetchRoute();
+    }
+  }, [destinationLocation.latitude, destinationLocation.longitude]);
+
+  // Sync external coordinates if parent provides them
+  useEffect(() => {
+    if (routeCoordinates && routeCoordinates.length >= 2) {
+      setFullRoute(routeCoordinates as LngLat[]);
+    }
+  }, [routeCoordinates]);
+
+  const progress = useMemo(
+    () => (fullRoute ? splitRouteProgress(fullRoute, driverLocation) : null),
+    [fullRoute, driverLocation.latitude, driverLocation.longitude]
+  );
+
+  // Off-route → re-fetch
+  useEffect(() => {
+    if (!progress?.offRoute) return;
+    const now = Date.now();
+    if (now - lastRerouteAtRef.current < 8000) return;
+    lastRerouteAtRef.current = now;
     fetchRoute();
-  }, [driverLocation, destinationLocation]);
+  }, [progress?.offRoute, driverLocation.latitude, driverLocation.longitude]);
 
-  // Route GeoJSON
-  const routeGeoJSON = routeCoordinates
-    ? {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: routeCoordinates,
-        },
-        properties: {},
-      }
-    : null;
+  const travelled = progress && progress.travelled.length >= 2 ? progress.travelled : null;
+  const remaining =
+    progress && progress.remaining.length >= 2 ? progress.remaining : fullRoute;
 
   return (
     <Mapbox.MapView
@@ -86,7 +110,7 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
       compassEnabled
       compassViewPosition={3}
       compassViewMargins={{ x: 16, y: 120 }}
-      attributionEnabled={false}
+      attributionEnabled={true}
       logoEnabled={false}
       pitchEnabled={true}
       rotateEnabled={true}
@@ -102,63 +126,18 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
         followUserMode="course"
       />
 
-      {/* User Location with Puck */}
       <Mapbox.LocationPuck
         pulsing={{ isEnabled: true }}
         puckBearingEnabled
         puckBearing="course"
       />
 
-      {/* Route Line - Shadow/Border */}
-      {routeGeoJSON && (
-        <Mapbox.ShapeSource id="routeBorder" shape={routeGeoJSON}>
-          <Mapbox.LineLayer
-            id="routeBorderLine"
-            style={{
-              lineColor: '#1e40af',
-              lineWidth: 10,
-              lineOpacity: 0.3,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        </Mapbox.ShapeSource>
-      )}
+      <RouteProgressLayers
+        travelled={travelled}
+        remaining={remaining}
+        idPrefix="nav-map"
+      />
 
-      {/* Route Line - Main */}
-      {routeGeoJSON && (
-        <Mapbox.ShapeSource id="routeMain" shape={routeGeoJSON}>
-          <Mapbox.LineLayer
-            id="routeMainLine"
-            style={{
-              lineColor: '#2563eb',
-              lineWidth: 7,
-              lineOpacity: 1,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        </Mapbox.ShapeSource>
-      )}
-
-      {/* Route Line - Casing (white outline) */}
-      {routeGeoJSON && (
-        <Mapbox.ShapeSource id="routeCasing" shape={routeGeoJSON}>
-          <Mapbox.LineLayer
-            id="routeCasingLine"
-            belowLayerID="routeBorderLine"
-            style={{
-              lineColor: '#ffffff',
-              lineWidth: 12,
-              lineOpacity: 0.8,
-              lineCap: 'round',
-              lineJoin: 'round',
-            }}
-          />
-        </Mapbox.ShapeSource>
-      )}
-
-      {/* Pickup Marker */}
       {showPickupMarker && pickupCoords && (
         <Mapbox.PointAnnotation
           id="pickupMarker"
@@ -168,7 +147,6 @@ export const NavigationMap: React.FC<NavigationMapProps> = ({
         </Mapbox.PointAnnotation>
       )}
 
-      {/* Dropoff Marker */}
       {showDropoffMarker && dropoffCoords && (
         <Mapbox.PointAnnotation
           id="dropoffMarker"

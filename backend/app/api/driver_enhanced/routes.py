@@ -1,18 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import func
 from typing import List, Optional
 from uuid import UUID
+from datetime import datetime
 import math
 from app.core.dependencies import get_db, get_current_driver
+from app.core.config import settings
 from app.schemas.ride_enhanced import RideEnhancedResponse, VerifyOTPRequest
 from app.models.ride_enhanced import RideEnhanced
 from app.models.driver import Driver
 from app.models.user import User
 from app.models.ride_cancellation import RideCancellation
+from app.services.realtime import hub
 
 router = APIRouter()
+
+
+def redact_otp_for_driver(ride_dict: dict) -> dict:
+    """Drivers must never receive the ride OTP — customer provides it verbally."""
+    ride_dict = dict(ride_dict)
+    ride_dict["ride_otp"] = None
+    return ride_dict
 
 
 def enrich_ride_response(ride: RideEnhanced, db: Session, current_driver: Driver = None) -> dict:
@@ -39,12 +49,33 @@ def enrich_ride_response(ride: RideEnhanced, db: Session, current_driver: Driver
             ride_dict['customer_name'] = customer.name
             ride_dict['customer_phone'] = customer.phone
 
-    return ride_dict
+    return redact_otp_for_driver(ride_dict)
+
+
+async def _emit_ride(ride: RideEnhanced, event: str, extra: Optional[dict] = None):
+    data = {
+        "ride_id": str(ride.id),
+        "status": ride.status,
+        "user_id": str(ride.user_id),
+        "driver_id": str(ride.driver_id) if ride.driver_id else None,
+    }
+    if extra:
+        data.update(extra)
+    await hub.publish_ride(str(ride.id), event, data)
+    await hub.publish_user(str(ride.user_id), event, data)
+    if ride.driver_id:
+        await hub.publish_driver(str(ride.driver_id), event, data)
 
 
 class LocationUpdate(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    accuracy: Optional[float] = None
+    heading: Optional[float] = None
+    speed: Optional[float] = None
+    recorded_at: Optional[datetime] = None
+    sequence: Optional[int] = None
+    ride_id: Optional[UUID] = None
 
 
 class CancelRideRequest(BaseModel):
@@ -81,12 +112,45 @@ async def update_driver_location(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Update driver's current GPS location"""
+    """Update driver's current GPS location and broadcast to active ride subscribers."""
     current_driver.current_lat = location.latitude
     current_driver.current_lng = location.longitude
     current_driver.location_updated_at = func.now()
     db.commit()
-    return {"status": "ok"}
+
+    # Resolve active ride (explicit ride_id preferred)
+    active_ride = None
+    if location.ride_id:
+        active_ride = db.query(RideEnhanced).filter(
+            RideEnhanced.id == location.ride_id,
+            RideEnhanced.driver_id == current_driver.id,
+            RideEnhanced.status.in_(["accepted", "started"]),
+        ).first()
+    if not active_ride:
+        active_ride = db.query(RideEnhanced).filter(
+            RideEnhanced.driver_id == current_driver.id,
+            RideEnhanced.status.in_(["accepted", "started"]),
+        ).first()
+
+    payload = {
+        "driver_id": str(current_driver.id),
+        "latitude": location.latitude,
+        "longitude": location.longitude,
+        "accuracy": location.accuracy,
+        "heading": location.heading,
+        "speed": location.speed,
+        "sequence": location.sequence,
+        "recorded_at": (location.recorded_at or datetime.utcnow()).isoformat(),
+        "ride_id": str(active_ride.id) if active_ride else None,
+        "status": active_ride.status if active_ride else None,
+    }
+
+    if active_ride:
+        if hub.remember_location(str(active_ride.id), payload):
+            await hub.publish_ride(str(active_ride.id), "driver_location", payload)
+            await hub.publish_user(str(active_ride.user_id), "driver_location", payload)
+
+    return {"status": "ok", "sequence": location.sequence}
 
 
 @router.get("/rides/available")
@@ -94,52 +158,83 @@ async def get_available_rides(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Get available rides for driver within 30 minutes reach"""
+    """Exclusive offers only — sequential one-by-one dispatch."""
+    from app.core.config import settings
+    from app.services.dispatch import (
+        driver_docs_ready,
+        driver_location_fresh,
+        vehicle_matches,
+        scheduled_ready_for_dispatch,
+        expire_stale_pending_rides,
+        offer_remaining_seconds,
+        driver_offer_remaining_seconds,
+        offer_is_for_driver,
+    )
+    from app.services.routing import estimate_pickup_eta_minutes, haversine_km
+
+    expire_stale_pending_rides(db)
+
+    ok, reason = driver_docs_ready(current_driver)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+
     if not current_driver.is_online:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Driver must be online to see available rides"
         )
 
-    # Check if driver has location
-    if not current_driver.current_lat or not current_driver.current_lng:
+    if not driver_location_fresh(current_driver):
         return []
 
-    # Get ride IDs this driver has already cancelled/rejected (don't show again)
-    cancelled_ride_ids = db.query(RideCancellation.ride_id).filter(
-        RideCancellation.canceller_id == current_driver.id
-    ).all()
-    excluded_ids = [r[0] for r in cancelled_ride_ids]
-
-    # Get all pending rides not previously rejected by this driver
-    query = db.query(RideEnhanced).filter(
-        RideEnhanced.status == "pending",
-        RideEnhanced.driver_id.is_(None)
-    )
-    if excluded_ids:
-        query = query.filter(RideEnhanced.id.notin_(excluded_ids))
+    if settings.SEQUENTIAL_DISPATCH:
+        query = db.query(RideEnhanced).filter(
+            RideEnhanced.status == "pending",
+            RideEnhanced.driver_id.is_(None),
+            RideEnhanced.offered_driver_id == current_driver.id,
+        )
+    else:
+        cancelled_ride_ids = db.query(RideCancellation.ride_id).filter(
+            RideCancellation.canceller_id == current_driver.id
+        ).all()
+        excluded_ids = [r[0] for r in cancelled_ride_ids]
+        query = db.query(RideEnhanced).filter(
+            RideEnhanced.status == "pending",
+            RideEnhanced.driver_id.is_(None),
+        )
+        if excluded_ids:
+            query = query.filter(RideEnhanced.id.notin_(excluded_ids))
 
     all_pending_rides = query.all()
 
-    # Filter rides within 30 minutes reach and calculate distance/ETA
     nearby_rides = []
-    MAX_ETA_MINUTES = 30
+    MAX_ETA_MINUTES = settings.MAX_PICKUP_ETA_MINUTES
 
     for ride in all_pending_rides:
-        # Calculate distance from driver to pickup location
-        distance_to_pickup = calculate_distance(
+        if not scheduled_ready_for_dispatch(ride):
+            continue
+        if settings.SEQUENTIAL_DISPATCH and not offer_is_for_driver(ride, current_driver.id):
+            continue
+        if settings.SEQUENTIAL_DISPATCH and driver_offer_remaining_seconds(ride) <= 0:
+            continue
+        if not vehicle_matches(current_driver, ride.vehicle_category):
+            continue
+
+        distance_to_pickup = haversine_km(
             current_driver.current_lat,
             current_driver.current_lng,
             ride.pickup_lat,
             ride.pickup_lng
         )
+        eta_to_pickup = estimate_pickup_eta_minutes(distance_to_pickup)
 
-        # Estimate ETA to pickup
-        eta_to_pickup = estimate_eta_minutes(distance_to_pickup)
-
-        # Only include rides reachable within 30 minutes
         if eta_to_pickup <= MAX_ETA_MINUTES:
-            # Convert to dict and add driver-to-pickup distance/ETA
+            offer_remaining = (
+                driver_offer_remaining_seconds(ride)
+                if settings.SEQUENTIAL_DISPATCH
+                else offer_remaining_seconds(ride)
+            )
+
             ride_dict = {
                 "id": str(ride.id),
                 "user_id": str(ride.user_id),
@@ -161,7 +256,7 @@ async def get_available_rides(
                 "passenger_notes": ride.passenger_notes,
                 "preferences": ride.preferences or {},
                 "driver_notes": ride.driver_notes,
-                "ride_otp": ride.ride_otp,
+                "ride_otp": None,
                 "otp_verified": ride.otp_verified,
                 "status": ride.status,
                 "rejection_count": ride.rejection_count,
@@ -177,9 +272,13 @@ async def get_available_rides(
                 "payment_status": ride.payment_status,
                 "payment_method": ride.payment_method,
                 "transaction_id": ride.transaction_id,
-                # Use driver-to-pickup distance and ETA for available rides
                 "distance_km": round(distance_to_pickup, 2),
                 "eta_minutes": round(eta_to_pickup),
+                "trip_distance_km": ride.distance_km,
+                "route_source": getattr(ride, "route_source", None),
+                "offer_ttl_seconds": settings.DRIVER_OFFER_SECONDS if settings.SEQUENTIAL_DISPATCH else settings.OFFER_TTL_SECONDS,
+                "offer_remaining_seconds": offer_remaining,
+                "search_remaining_seconds": offer_remaining_seconds(ride),
                 "driver_name": None,
                 "driver_phone": None,
                 "driver_vehicle_number": None,
@@ -189,10 +288,7 @@ async def get_available_rides(
             }
             nearby_rides.append(ride_dict)
 
-    # Sort by distance (closest first)
     nearby_rides.sort(key=lambda r: r["distance_km"])
-
-    # Limit to top 10 closest rides
     return nearby_rides[:10]
 
 
@@ -202,11 +298,46 @@ async def accept_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Accept a ride request with row-level lock to prevent race conditions"""
+    """Accept exclusive offer — FOR UPDATE prevents double accept."""
+    from app.core.config import settings
+    from app.services.dispatch import (
+        driver_docs_ready,
+        driver_location_fresh,
+        vehicle_matches,
+        scheduled_ready_for_dispatch,
+        offer_remaining_seconds,
+        driver_offer_remaining_seconds,
+        offer_is_for_driver,
+        driver_has_active_ride,
+        declined_driver_ids,
+    )
+
+    ok, reason = driver_docs_ready(current_driver)
+    if not ok:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+
     if not current_driver.is_online:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Driver must be online to accept rides"
+        )
+
+    if not driver_location_fresh(current_driver):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Location is stale. Enable GPS and update location before accepting.",
+        )
+
+    if driver_has_active_ride(db, current_driver.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Complete your current ride before accepting another",
+        )
+
+    if current_driver.id in declined_driver_ids(db, ride_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You already declined this ride",
         )
 
     # SELECT FOR UPDATE - locks the row to prevent race condition
@@ -222,11 +353,56 @@ async def accept_ride(
             detail="Ride already accepted by another driver"
         )
 
+    if settings.SEQUENTIAL_DISPATCH and not offer_is_for_driver(ride, current_driver.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This offer is not assigned to you",
+        )
+
+    if settings.SEQUENTIAL_DISPATCH and driver_offer_remaining_seconds(ride) <= 0:
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Offer window expired")
+
+    if offer_remaining_seconds(ride) <= 0:
+        ride.status = "cancelled"
+        ride.cancellation_reason = "Offer expired before accept"
+        ride.offered_driver_id = None
+        ride.offer_started_at = None
+        db.commit()
+        raise HTTPException(status_code=status.HTTP_410_GONE, detail="Ride offer expired")
+
+    if not scheduled_ready_for_dispatch(ride):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Scheduled ride is not open for dispatch yet",
+        )
+
+    if not vehicle_matches(current_driver, ride.vehicle_category):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Vehicle type does not match ride category ({ride.vehicle_category})",
+        )
+
+    prefs = ride.preferences or {}
+    if prefs.get("women_driver") and (getattr(current_driver, "gender", None) or "").lower() != "female":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This ride prefers a women captain",
+        )
+
     ride.driver_id = current_driver.id
     ride.status = "accepted"
+    ride.offered_driver_id = None
+    ride.offer_started_at = None
     db.commit()
     db.refresh(ride)
 
+    await _emit_ride(ride, "ride_accepted")
+    # Tell other drivers immediately so UI drops any stale offer
+    await hub.publish(hub.drivers_online_channel(), "ride_taken", {
+        "ride_id": str(ride.id),
+        "driver_id": str(current_driver.id),
+        "status": "accepted",
+    })
     return enrich_ride_response(ride, db, current_driver)
 
 
@@ -266,6 +442,7 @@ async def verify_ride_otp(
     db.commit()
     db.refresh(ride)
 
+    await _emit_ride(ride, "otp_verified")
     return enrich_ride_response(ride, db, current_driver)
 
 
@@ -303,6 +480,7 @@ async def start_ride(
     db.commit()
     db.refresh(ride)
 
+    await _emit_ride(ride, "ride_started")
     return enrich_ride_response(ride, db, current_driver)
 
 
@@ -313,7 +491,10 @@ async def complete_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Complete a ride - checks driver is within 500m of dropoff unless force=true"""
+    """Complete a ride - checks driver is within 500m of dropoff.
+
+    force=true is disabled unless ALLOW_FORCE_COMPLETE is set server-side.
+    """
     ride = db.query(RideEnhanced).filter(
         RideEnhanced.id == ride_id,
         RideEnhanced.driver_id == current_driver.id
@@ -331,25 +512,38 @@ async def complete_ride(
             detail="Can only complete rides that are started"
         )
 
-    # Location-based completion check (500m radius) - skip if force=true
-    if not force and ride.dropoff_lat and ride.dropoff_lng and current_driver.current_lat and current_driver.current_lng:
-        distance_to_dropoff = calculate_distance(
-            current_driver.current_lat,
-            current_driver.current_lng,
-            ride.dropoff_lat,
-            ride.dropoff_lng
+    if force and not settings.ALLOW_FORCE_COMPLETE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Force complete is disabled. Reach the drop-off to complete the ride.",
         )
-        if distance_to_dropoff > 0.5:
+
+    # Location-based completion check (500m radius)
+    if not force:
+        if not (current_driver.current_lat and current_driver.current_lng):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"You are {distance_to_dropoff:.1f} km away from drop-off. Please reach the destination to complete the ride."
+                detail="Current location required to complete ride. Enable GPS and try again.",
             )
+        if ride.dropoff_lat and ride.dropoff_lng:
+            distance_to_dropoff = calculate_distance(
+                current_driver.current_lat,
+                current_driver.current_lng,
+                ride.dropoff_lat,
+                ride.dropoff_lng
+            )
+            if distance_to_dropoff > 0.5:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"You are {distance_to_dropoff:.1f} km away from drop-off. Please reach the destination to complete the ride."
+                )
 
     ride.status = "completed"
     ride.payment_status = "pending"
     db.commit()
     db.refresh(ride)
 
+    await _emit_ride(ride, "ride_completed")
     return enrich_ride_response(ride, db, current_driver)
 
 
@@ -360,12 +554,23 @@ async def cancel_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Cancel an accepted ride with reason"""
+    """
+    Driver cancel:
+    - accepted + OTP not verified → reassign to next driver (no overlap kill)
+    - started / OTP verified → permanently cancel
+    """
+    from app.services.dispatch import (
+        begin_dispatch,
+        assign_next_offer,
+        emit_ride_offer,
+        record_driver_pass,
+    )
+
     ride = db.query(RideEnhanced).filter(
         RideEnhanced.id == ride_id,
         RideEnhanced.driver_id == current_driver.id,
         RideEnhanced.status.in_(["accepted", "started"])
-    ).first()
+    ).with_for_update().first()
 
     if not ride:
         raise HTTPException(
@@ -373,7 +578,30 @@ async def cancel_ride(
             detail="Ride not found or not assigned to you"
         )
 
-    # Try to create cancellation record, but don't fail if table doesn't exist
+    # Soft cancel → next driver (before trip actually starts)
+    if ride.status == "accepted" and not ride.otp_verified:
+        record_driver_pass(db, ride, current_driver.id, cancel_request.reason or "driver_cancelled")
+        ride.driver_id = None
+        ride.status = "pending"
+        ride.otp_verified = False
+        begin_dispatch(ride)
+        next_driver = assign_next_offer(db, ride)
+        db.commit()
+        db.refresh(ride)
+
+        await _emit_ride(ride, "ride_reassigned", {
+            "rejection_count": ride.rejection_count,
+            "reason": cancel_request.reason,
+        })
+        if next_driver:
+            await emit_ride_offer(ride, next_driver)
+        return {
+            "message": "Ride returned to dispatch for next driver",
+            "reason": cancel_request.reason,
+            "reassigned": True,
+        }
+
+    # Hard cancel after trip started
     try:
         cancellation = RideCancellation(
             ride_id=ride_id,
@@ -384,21 +612,33 @@ async def cancel_ride(
         )
         db.add(cancellation)
     except Exception as e:
-        # Table might not exist yet, just log and continue
         print(f"Warning: Could not create cancellation record: {e}")
 
-    # Update ride status
+    previous_driver_id = ride.driver_id
     ride.status = "cancelled"
     ride.driver_id = None
-
-    # Store reason in ride for now
+    ride.offered_driver_id = None
+    ride.offer_started_at = None
     ride.cancellation_reason = f"{cancel_request.reason}: {cancel_request.custom_reason or ''}"
 
     db.commit()
 
+    data = {
+        "ride_id": str(ride.id),
+        "status": "cancelled",
+        "user_id": str(ride.user_id),
+        "driver_id": str(previous_driver_id) if previous_driver_id else None,
+        "reason": cancel_request.reason,
+    }
+    await hub.publish_ride(str(ride.id), "ride_cancelled", data)
+    await hub.publish_user(str(ride.user_id), "ride_cancelled", data)
+    if previous_driver_id:
+        await hub.publish_driver(str(previous_driver_id), "ride_cancelled", data)
+
     return {
         "message": "Ride cancelled successfully",
-        "reason": cancel_request.reason
+        "reason": cancel_request.reason,
+        "reassigned": False,
     }
 
 
@@ -490,8 +730,15 @@ async def reject_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Reject or cancel a ride (before starting)"""
-    ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
+    """Reject after accept → reassign to next driver with fresh search clock."""
+    from app.services.dispatch import (
+        begin_dispatch,
+        assign_next_offer,
+        emit_ride_offer,
+        record_driver_pass,
+    )
+
+    ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).with_for_update().first()
 
     if not ride:
         raise HTTPException(
@@ -517,19 +764,56 @@ async def reject_ride(
             detail="Cannot reject ride after OTP verification. Ride has started."
         )
 
-    # Increment rejection count and make ride available again
-    ride.rejection_count += 1
+    record_driver_pass(db, ride, current_driver.id, "driver_rejected_after_accept")
     ride.driver_id = None
     ride.status = "pending"
     ride.otp_verified = False
+    begin_dispatch(ride)
+    next_driver = assign_next_offer(db, ride)
 
     db.commit()
     db.refresh(ride)
+
+    await _emit_ride(ride, "ride_reassigned", {"rejection_count": ride.rejection_count})
+    if next_driver:
+        await emit_ride_offer(ride, next_driver)
 
     return {
         "message": "Ride rejected successfully",
         "rejection_count": ride.rejection_count,
         "ride_id": str(ride.id)
+    }
+
+
+@router.put("/status")
+async def update_driver_status_v2(
+    payload: dict,
+    current_driver: Driver = Depends(get_current_driver),
+    db: Session = Depends(get_db),
+):
+    """Go online/offline with docs + location gates."""
+    from app.services.dispatch import driver_docs_ready, driver_location_fresh
+
+    want_online = bool(payload.get("is_online"))
+    if want_online:
+        ok, reason = driver_docs_ready(current_driver)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+        if not driver_location_fresh(current_driver):
+            if current_driver.current_lat is None or current_driver.current_lng is None:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Share your GPS location before going online",
+                )
+
+    current_driver.is_online = want_online
+    db.commit()
+    db.refresh(current_driver)
+    return {
+        "id": str(current_driver.id),
+        "is_online": current_driver.is_online,
+        "is_verified": current_driver.is_verified,
+        "vehicle_type": current_driver.vehicle_type,
     }
 
 
@@ -539,16 +823,39 @@ async def decline_ride(
     current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db)
 ):
-    """Decline a pending ride - records that this driver doesn't want it.
-    The ride stays pending for other drivers."""
-    # Record decline so this driver won't see it again
-    cancellation = RideCancellation(
-        ride_id=ride_id,
-        cancelled_by="driver",
-        canceller_id=current_driver.id,
-        reason="driver_declined",
+    """Decline exclusive pending offer → immediately offer next driver."""
+    from app.services.dispatch import (
+        record_driver_pass,
+        assign_next_offer,
+        emit_ride_offer,
+        offer_is_for_driver,
     )
-    db.add(cancellation)
-    db.commit()
+    from app.core.config import settings
 
-    return {"message": "Ride declined"}
+    ride = db.query(RideEnhanced).filter(
+        RideEnhanced.id == ride_id,
+        RideEnhanced.status == "pending",
+    ).with_for_update().first()
+    if not ride:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Pending ride not found")
+
+    if settings.SEQUENTIAL_DISPATCH and not offer_is_for_driver(ride, current_driver.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="This offer is not assigned to you",
+        )
+
+    record_driver_pass(db, ride, current_driver.id, "driver_declined")
+    ride.offered_driver_id = None
+    ride.offer_started_at = None
+    next_driver = assign_next_offer(db, ride)
+    db.commit()
+    db.refresh(ride)
+
+    await hub.publish_driver(str(current_driver.id), "offer_expired", {
+        "ride_id": str(ride_id),
+    })
+    if next_driver:
+        await emit_ride_offer(ride, next_driver)
+
+    return {"message": "Ride declined", "next_offered": bool(next_driver)}

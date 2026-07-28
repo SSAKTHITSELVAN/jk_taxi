@@ -261,7 +261,9 @@ export default function RideDetailsScreen() {
                 <Ionicons name="lock-closed" size={24} color={Colors.warning} />
                 <View style={styles.otpContent}>
                   <Text style={styles.otpTitle}>OTP Verification Required</Text>
-                  <Text style={styles.otpText}>Ask customer for OTP: <Text style={styles.otpCode}>{ride.ride_otp || ride.otp || 'N/A'}</Text></Text>
+                  <Text style={styles.otpText}>
+                    Ask the customer for their 4-digit ride OTP, then enter it to start the trip.
+                  </Text>
                 </View>
               </View>
             </Card>

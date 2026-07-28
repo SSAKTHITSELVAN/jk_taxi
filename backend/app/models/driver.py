@@ -15,6 +15,8 @@ class Driver(Base):
     password_hash = Column(String(255), nullable=False)
     vehicle_number = Column(String(20), nullable=True)
     vehicle_type = Column(String(50), nullable=True)
+    # male | female | other — used for women-driver preference matching
+    gender = Column(String(20), nullable=True)
     is_online = Column(Boolean, default=False)
     is_verified = Column(Boolean, default=False)  # Admin verification status
     is_active = Column(Boolean, default=False)  # Account active only after admin approval
