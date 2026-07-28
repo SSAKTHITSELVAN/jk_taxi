@@ -17,6 +17,7 @@ import { router } from 'expo-router';
 import { EnhancedRide } from '../../types/enhanced';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
 import { bookingEnhancedApi } from '../../api/booking-enhanced';
+import { useAuthStore } from '../../store/authStore';
 
 const { width } = Dimensions.get('window');
 
@@ -26,8 +27,8 @@ interface ActiveRideTrackerProps {
 }
 
 export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRideComplete }) => {
-  const [driverSearchCount, setDriverSearchCount] = useState(0);
-  const [rejectedCount, setRejectedCount] = useState(0);
+  const { user } = useAuthStore();
+  const displayOtp = user?.ride_otp || ride.ride_otp;
   const [showRating, setShowRating] = useState(false);
   const [rating, setRating] = useState(0);
   const [ratingComment, setRatingComment] = useState('');
@@ -67,26 +68,15 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
   };
 
   const currentStatus = STATUS_INFO[ride.status as keyof typeof STATUS_INFO] || STATUS_INFO.pending;
+  const rejectionCount = ride.rejection_count ?? 0;
+  const driverName = (ride as any).driver_name || ride.driver?.name || 'Driver';
+  const driverPhone = (ride as any).driver_phone || ride.driver?.phone || null;
+  const vehicleNumber = (ride as any).driver_vehicle_number || ride.driver?.vehicle_number || '—';
+  const vehicleType = (ride as any).driver_vehicle_type || ride.driver?.vehicle_type || ride.vehicle_category || '—';
 
-  // Simulate driver search updates (in production, use real-time updates)
-  useEffect(() => {
-    if (ride.status === 'pending') {
-      const interval = setInterval(() => {
-        setDriverSearchCount(prev => prev + 1);
-        // Simulate rejection every 3 searches
-        if (Math.random() > 0.7) {
-          setRejectedCount(prev => prev + 1);
-        }
-      }, 3000);
-
-      return () => clearInterval(interval);
-    }
-  }, [ride.status]);
-
-  // Show rating after completion or cancellation (only if started)
+  // Show rating after completion
   useEffect(() => {
     if ((ride.status === 'completed' || ride.status === 'cancelled') && ride.driver_id) {
-      // Only show rating if ride was actually started
       if (ride.status === 'completed' || (ride.status === 'cancelled' && ride.otp_verified)) {
         setShowRating(true);
       }
@@ -133,8 +123,10 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
         {
           text: 'Call',
           onPress: () => {
-            // In production, get actual driver phone from backend
-            const driverPhone = '+919876543210';
+            if (!driverPhone) {
+              Alert.alert('Unavailable', 'Driver phone number is not available yet.');
+              return;
+            }
             Linking.openURL(`tel:${driverPhone}`).catch(() => {
               Alert.alert('Error', 'Unable to make call. Please dial manually.');
             });
@@ -291,15 +283,15 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
           {ride.status === 'pending' && (
             <View style={styles.statsContainer}>
               <View style={styles.statItem}>
-                <Ionicons name="search" size={24} color={Colors.primary} />
-                <Text style={styles.statNumber}>{driverSearchCount}</Text>
-                <Text style={styles.statLabel}>Drivers Notified</Text>
+                <Ionicons name="time" size={24} color={Colors.primary} />
+                <Text style={styles.statNumber}>{ride.status}</Text>
+                <Text style={styles.statLabel}>Looking for driver</Text>
               </View>
               <View style={styles.statDivider} />
               <View style={styles.statItem}>
                 <Ionicons name="close-circle" size={24} color="#EF4444" />
-                <Text style={styles.statNumber}>{rejectedCount}</Text>
-                <Text style={styles.statLabel}>Rejected</Text>
+                <Text style={styles.statNumber}>{rejectionCount}</Text>
+                <Text style={styles.statLabel}>Declined</Text>
               </View>
             </View>
           )}
@@ -313,10 +305,10 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
                 <Text style={styles.driverAvatarText}>D</Text>
               </View>
               <View style={styles.driverInfo}>
-                <Text style={styles.driverName}>Driver Name</Text>
+                <Text style={styles.driverName}>{driverName}</Text>
                 <View style={styles.driverRating}>
                   <Ionicons name="star" size={14} color="#F59E0B" />
-                  <Text style={styles.driverRatingText}>4.8</Text>
+                  <Text style={styles.driverRatingText}>—</Text>
                 </View>
               </View>
               <TouchableOpacity style={styles.callButton} onPress={handleCallDriver}>
@@ -327,11 +319,11 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
             <View style={styles.driverDetails}>
               <View style={styles.driverDetailItem}>
                 <Ionicons name="car-sport" size={18} color="#666" />
-                <Text style={styles.driverDetailText}>KA 01 AB 1234</Text>
+                <Text style={styles.driverDetailText}>{vehicleNumber}</Text>
               </View>
               <View style={styles.driverDetailItem}>
                 <Ionicons name="color-palette" size={18} color="#666" />
-                <Text style={styles.driverDetailText}>White Sedan</Text>
+                <Text style={styles.driverDetailText}>{vehicleType}</Text>
               </View>
             </View>
           </View>
@@ -368,9 +360,9 @@ export const ActiveRideTracker: React.FC<ActiveRideTrackerProps> = ({ ride, onRi
           <View style={styles.otpContainer}>
             <View style={styles.otpHeader}>
               <Ionicons name="shield-checkmark" size={20} color={Colors.primary} />
-              <Text style={styles.otpLabel}>Ride OTP</Text>
+              <Text style={styles.otpLabel}>Your Ride OTP</Text>
             </View>
-            <Text style={styles.otpNumber}>{ride.ride_otp}</Text>
+            <Text style={styles.otpNumber}>{displayOtp}</Text>
             <Text style={styles.otpHint}>Share this OTP with your driver</Text>
           </View>
 

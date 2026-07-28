@@ -50,9 +50,9 @@ export interface EnhancedRide {
     wheelchair_support: boolean;
   };
   driver_notes?: string;
-  ride_otp: string;
+  ride_otp?: string | null;
   otp_verified: boolean;
-  otp?: string; // Alias for ride_otp
+  otp?: string | null; // Alias for ride_otp (never shown to drivers)
   status: string;
   fare: number;
   base_fare: number;
@@ -68,6 +68,10 @@ export interface EnhancedRide {
   distance_km: number;
   distance?: number; // Alias for distance_km
   eta_minutes: number;
+  trip_distance_km?: number;
+  route_source?: string | null;
+  offer_ttl_seconds?: number;
+  offer_remaining_seconds?: number;
   created_at: string;
   updated_at: string;
   customer?: Customer;

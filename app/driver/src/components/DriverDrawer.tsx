@@ -61,7 +61,7 @@ export const DriverDrawer: React.FC<DriverDrawerProps> = ({ isOpen, onClose, isO
             </View>
           </View>
           <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-            <Ionicons name="close" size={28} color="#FFFFFF" />
+            <Ionicons name="close" size={28} color={Colors.ink} />
           </TouchableOpacity>
         </View>
 
@@ -203,10 +203,12 @@ const styles = StyleSheet.create({
     zIndex: 9999,
   },
   header: {
-    backgroundColor: Colors.primary,
+    backgroundColor: Colors.primarySoft,
     paddingTop: Platform.OS === 'ios' ? 60 : 50,
     paddingBottom: Spacing.lg,
     paddingHorizontal: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
   },
   headerContent: {
     flexDirection: 'row',
@@ -217,7 +219,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: Colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: Spacing.md,
@@ -233,13 +235,12 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: FontSizes.xl,
     fontWeight: FontWeights.bold,
-    color: '#FFFFFF',
+    color: Colors.ink,
     marginBottom: 4,
   },
   userPhone: {
     fontSize: FontSizes.md,
-    color: '#FFFFFF',
-    opacity: 0.95,
+    color: Colors.inkSecondary,
   },
   closeButton: {
     position: 'absolute',
@@ -252,7 +253,7 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: Colors.background,
   },
   statusCard: {
     margin: Spacing.lg,

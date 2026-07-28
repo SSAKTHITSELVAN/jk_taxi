@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { driverEnhancedApi } from '../src/api/driver-enhanced';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
+import { BottomNav } from '../src/components/navigation/BottomNav';
 
 interface EarningsData {
   today: { earnings: number; rides: number };
@@ -169,12 +170,13 @@ export default function WalletScreen() {
           </View>
         )}
       </ScrollView>
+      <BottomNav />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
+  container: { flex: 1, backgroundColor: Colors.background },
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#FFF',

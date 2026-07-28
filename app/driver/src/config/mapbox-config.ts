@@ -30,6 +30,13 @@ export const ZOOM_LEVELS = {
 // Animation duration (ms)
 export const ANIMATION_DURATION = 1000;
 
+/**
+ * Navigation product decision (P2):
+ * - "external_maps": hand off to Google/Apple Maps (current, lower complexity)
+ * - "embedded": future Mapbox Navigation SDK turn-by-turn inside the app
+ */
+export const NAVIGATION_MODE: 'external_maps' | 'embedded' = 'external_maps';
+
 // Map padding for route fitting
 export const MAP_PADDING = {
   top: 100,

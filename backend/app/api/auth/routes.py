@@ -1,4 +1,3 @@
-import random
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -13,15 +12,15 @@ from app.schemas.auth import (
 from app.models.user import User
 from app.models.driver import Driver
 from app.models.admin import Admin
+from app.services import otp_store
 
 router = APIRouter()
 
-# In-memory OTP store (phone -> otp)
-_otp_store: dict[str, str] = {}
-
 
 def _send_otp_sms(phone: str, otp: str) -> bool:
-    """Send OTP via TeleSign SMS"""
+    """Send OTP via TeleSign SMS when credentials are configured."""
+    if not settings.TELESIGN_CUSTOMER_ID or not settings.TELESIGN_API_KEY:
+        return False
     try:
         from telesignenterprise.verify import VerifyClient
         verify = VerifyClient(settings.TELESIGN_CUSTOMER_ID, settings.TELESIGN_API_KEY)
@@ -36,22 +35,43 @@ def _send_otp_sms(phone: str, otp: str) -> bool:
         return False
 
 
-VERIFIED_NUMBERS = {"9361802547"}
-
-
 @router.post("/send-otp")
 async def send_otp(data: SendOTP, db: Session = Depends(get_db)):
     """Send OTP to phone number for login/registration"""
     phone = data.phone.strip()
 
-    if phone in VERIFIED_NUMBERS or phone.replace("91", "", 1) in VERIFIED_NUMBERS:
-        otp = str(random.randint(1000, 9999))
-        _otp_store[phone] = otp
-        _send_otp_sms(phone, otp)
-    else:
-        _otp_store[phone] = "1234"
+    allowed, reason = otp_store.check_send_allowed(phone)
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail=reason)
 
-    return {"message": "OTP sent successfully", "otp_length": 4}
+    if settings.ALLOW_STATIC_OTP:
+        otp = settings.STATIC_OTP[:settings.OTP_LENGTH].ljust(settings.OTP_LENGTH, "0")[:settings.OTP_LENGTH]
+        # Prefer a clean static code of correct length
+        if settings.OTP_LENGTH == 4:
+            otp = settings.STATIC_OTP[-4:] if len(settings.STATIC_OTP) >= 4 else "1234"
+        elif settings.OTP_LENGTH == 6:
+            otp = settings.STATIC_OTP if len(settings.STATIC_OTP) == 6 else "123456"
+    else:
+        otp = otp_store.generate_otp()
+
+    otp_store.store_otp(phone, otp)
+    otp_store.record_send(phone)
+
+    sms_sent = False
+    if not settings.ALLOW_STATIC_OTP:
+        sms_sent = _send_otp_sms(phone, otp)
+        if not sms_sent:
+            # Do not leak OTP; fail closed when SMS provider is unavailable
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Unable to send OTP right now. Please try again.",
+            )
+
+    return {
+        "message": "OTP sent successfully",
+        "otp_length": settings.OTP_LENGTH,
+        "dev_mode": settings.ALLOW_STATIC_OTP,
+    }
 
 
 @router.post("/verify-otp")
@@ -60,14 +80,12 @@ async def verify_otp_endpoint(data: VerifyOTP, db: Session = Depends(get_db)):
     phone = data.phone.strip()
     otp = data.otp.strip()
 
-    stored_otp = _otp_store.get(phone)
-    if not stored_otp or stored_otp != otp:
+    ok, reason = otp_store.verify_and_consume(phone, otp)
+    if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid OTP"
+            detail=reason,
         )
-
-    del _otp_store[phone]
 
     user = db.query(User).filter(User.phone == phone).first()
     is_new_user = False
@@ -259,6 +277,22 @@ async def refresh_access_token(request: RefreshTokenRequest, db: Session = Depen
 
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid token payload")
+
+    # Validate subject still exists and is active
+    if role == "user":
+        entity = db.query(User).filter(User.id == user_id).first()
+        if not entity or not entity.is_active:
+            raise HTTPException(status_code=401, detail="Account invalid")
+    elif role == "driver":
+        entity = db.query(Driver).filter(Driver.id == user_id).first()
+        if not entity or not entity.is_active:
+            raise HTTPException(status_code=401, detail="Account invalid")
+    elif role == "admin":
+        entity = db.query(Admin).filter(Admin.id == user_id).first()
+        if not entity or not entity.is_active:
+            raise HTTPException(status_code=401, detail="Account invalid")
+    else:
+        raise HTTPException(status_code=401, detail="Invalid token role")
 
     access_token = create_access_token(data={"sub": user_id, "role": role})
     new_refresh_token = create_refresh_token(data={"sub": user_id, "role": role})

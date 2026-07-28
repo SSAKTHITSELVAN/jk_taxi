@@ -22,6 +22,7 @@ import { bookingEnhancedApi, userEnhancedApi } from '../src/api/booking-enhanced
 import { VehicleCategory, TripType, FareBreakdown, RidePreferences, StopLocation, SavedPlaces } from '../src/types/enhanced';
 import { useRideStore } from '../src/store/rideStore';
 import { MAPBOX_ACCESS_TOKEN } from '../src/config/mapbox-config';
+import { serviceAreaError } from '../src/utils/serviceArea';
 
 const TRIP_TYPES = [
   { type: TripType.ONE_WAY, label: 'One Way', icon: 'arrow-forward' },
@@ -32,10 +33,12 @@ const TRIP_TYPES = [
 ];
 
 const VEHICLE_OPTIONS = [
+  { type: VehicleCategory.BIKE, name: 'Bike', icon: 'bicycle', capacity: '1 seat', examples: 'Activa, Pulsar', color: '#F97316' },
+  { type: VehicleCategory.AUTO, name: 'Auto', icon: 'bus', capacity: '3 seats', examples: 'Auto rickshaw', color: '#EAB308' },
   { type: VehicleCategory.MINI, name: 'Mini', icon: 'car-outline', capacity: '4 seats', examples: 'WagonR, Alto', color: '#4CAF50' },
   { type: VehicleCategory.SEDAN, name: 'Sedan', icon: 'car-sport-outline', capacity: '4 seats', examples: 'Dzire, Etios', color: '#2196F3' },
   { type: VehicleCategory.SUV, name: 'SUV', icon: 'car', capacity: '6-7 seats', examples: 'Ertiga, Innova', color: '#FF9800' },
-  { type: VehicleCategory.PREMIUM, name: 'Premium', icon: 'car-sport', capacity: '4 seats', examples: 'Crysta, BYD', color: '#9C27B0' },
+  { type: VehicleCategory.PREMIUM, name: 'Premium', icon: 'diamond', capacity: '4 seats', examples: 'Crysta, BYD', color: '#9C27B0' },
 ];
 
 export default function BookRideScreen() {
@@ -64,7 +67,7 @@ export default function BookRideScreen() {
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [preferences, setPreferences] = useState<RidePreferences>({
     ac_preferred: false, pet_friendly: false, silent_ride: false,
-    extra_luggage: false, wheelchair_support: false,
+    extra_luggage: false, wheelchair_support: false, women_driver: false,
   });
   const [driverNotes, setDriverNotes] = useState('');
 
@@ -219,6 +222,17 @@ export default function BookRideScreen() {
   const handleBookRide = async () => {
     if (!pickupLocation || !dropoffLocation) {
       Alert.alert('Missing Info', 'Please select pickup and dropoff locations');
+      return;
+    }
+
+    const pickupErr = serviceAreaError(pickupLocation.latitude, pickupLocation.longitude, 'Pickup');
+    if (pickupErr) {
+      Alert.alert('Outside Service Area', pickupErr);
+      return;
+    }
+    const dropErr = serviceAreaError(dropoffLocation.latitude, dropoffLocation.longitude, 'Dropoff');
+    if (dropErr) {
+      Alert.alert('Outside Service Area', dropErr);
       return;
     }
 
@@ -578,6 +592,7 @@ export default function BookRideScreen() {
             <View style={styles.optionSection}>
               <Text style={styles.optionSectionTitle}>Preferences</Text>
               {[
+                { key: 'women_driver', label: 'Women Captain', icon: 'woman' },
                 { key: 'ac_preferred', label: 'AC Preferred', icon: 'snow' },
                 { key: 'pet_friendly', label: 'Pet Friendly', icon: 'paw' },
                 { key: 'silent_ride', label: 'Silent Ride', icon: 'volume-mute' },

@@ -17,6 +17,7 @@ class VehicleCategory(str, Enum):
     MINI = "mini"
     SEDAN = "sedan"
     SUV = "suv"
+    PREMIUM = "premium"
 
 
 class RideStatus(str, Enum):
@@ -45,6 +46,7 @@ class RidePreferences(BaseModel):
     silent_ride: bool = False
     extra_luggage: bool = False
     wheelchair_support: bool = False
+    women_driver: bool = False
 
 
 class VehicleCategoryCreate(BaseModel):
@@ -83,6 +85,10 @@ class FareBreakdown(BaseModel):
     night_charges: float = 0.0
     waiting_charges: float = 0.0
     total: float
+    distance_km: float = 0.0
+    duration_minutes: float = 0.0
+    route_source: Optional[str] = None
+    surge_multiplier: float = 1.0
 
 
 class BookingCreate(BaseModel):
@@ -149,8 +155,8 @@ class RideEnhancedResponse(BaseModel):
     preferences: Dict = {}
     driver_notes: Optional[str]
 
-    # OTP
-    ride_otp: str
+    # OTP — may be omitted/null for driver-facing responses
+    ride_otp: Optional[str] = None
     otp_verified: bool
 
     # Status & Tracking
@@ -176,6 +182,9 @@ class RideEnhancedResponse(BaseModel):
     # Distance & ETA
     distance_km: float
     eta_minutes: int
+    route_geometry: Optional[List] = None
+    route_duration_seconds: Optional[float] = None
+    route_source: Optional[str] = None
 
     # Customer info (populated for driver-facing responses)
     customer_name: Optional[str] = None

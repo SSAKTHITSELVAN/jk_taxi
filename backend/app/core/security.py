@@ -46,8 +46,3 @@ def decode_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
-
-
-def verify_otp(otp: str) -> bool:
-    """Verify static OTP (always 123456)"""
-    return otp == settings.STATIC_OTP

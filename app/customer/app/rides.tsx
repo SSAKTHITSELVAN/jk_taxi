@@ -19,7 +19,7 @@ import { Button } from '../src/components/common/Button';
 import { RatingModal } from '../src/components/RatingModal';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
 import { Ride } from '../src/types';
-import { bookingApi } from '../src/api/booking';
+import { BottomNav } from '../src/components/navigation/BottomNav';
 
 const STATUS_CONFIG = {
   pending: {
@@ -35,8 +35,8 @@ const STATUS_CONFIG = {
     label: 'Accepted',
   },
   started: {
-    color: '#8B5CF6',
-    bg: '#F3E8FF',
+    color: Colors.primary,
+    bg: Colors.primarySoft,
     icon: 'car-sport-outline',
     label: 'In Progress',
   },
@@ -153,9 +153,11 @@ export default function RidesScreen() {
     if (!ratingRideId) return;
 
     try {
+      const { bookingEnhancedApi } = await import('../src/api/booking-enhanced');
+      await bookingEnhancedApi.submitRating(ratingRideId, rating, comment);
       Alert.alert('Thank You!', 'Your rating has been submitted successfully');
-      console.log(`Rating submitted for ride ${ratingRideId}: ${rating} stars, comment: ${comment}`);
-    } catch (error) {
+    } catch (error: any) {
+      Alert.alert('Failed', error.response?.data?.detail || 'Could not submit rating');
       throw error;
     }
   };
@@ -393,6 +395,7 @@ export default function RidesScreen() {
         onSubmit={handleRateRide}
         rideId={ratingRideId || ''}
       />
+      <BottomNav />
     </SafeAreaView>
   );
 }
@@ -400,7 +403,7 @@ export default function RidesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8F9FA',
+    backgroundColor: Colors.background,
   },
   header: {
     flexDirection: 'row',

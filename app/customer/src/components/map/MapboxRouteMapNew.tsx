@@ -147,8 +147,8 @@ export const MapboxRouteMapNew: React.FC<MapboxRouteMapNewProps> = ({
         style={styles.map}
         styleURL="mapbox://styles/mapbox/navigation-day-v1"
         compassEnabled
-        attributionEnabled={false}
-        logoEnabled={false}
+        attributionEnabled={true}
+        logoEnabled={true}
       >
         <Mapbox.Camera
           ref={cameraRef}

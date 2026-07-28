@@ -25,6 +25,16 @@ import { PaymentCollectionModal } from '../src/components/PaymentCollectionModal
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
 import { EnhancedRide } from '../src/types/enhanced';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, ANIMATION_DURATION } from '../src/config/mapbox-config';
+import { driverLocationService } from '../src/services/locationTracking';
+import { rideRealtime } from '../src/services/realtime';
+import { RouteProgressLayers } from '../src/components/map/RouteProgressLayers';
+import {
+  estimateRemainingMinutes,
+  remainingDistanceMeters,
+  splitRouteProgress,
+  type LngLat,
+} from '../src/utils/routeProgress';
+import { BottomNav } from '../src/components/navigation/BottomNav';
 
 Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
 
@@ -46,17 +56,19 @@ export default function HomeScreen() {
   const [completedRideFare, setCompletedRideFare] = useState(0);
   const [completedRideId, setCompletedRideId] = useState('');
 
-  // Map state
+  // Map state — keep full polyline; progress dims travelled vs remaining (Google Maps style)
   const [driverLoc, setDriverLoc] = useState({ latitude: 12.9716, longitude: 77.5946 });
-  const [routeCoords, setRouteCoords] = useState<number[][] | null>(null);
+  const [routeCoords, setRouteCoords] = useState<LngLat[] | null>(null);
   const [routeInfo, setRouteInfo] = useState<{ distance: number; duration: number } | null>(null);
   const [userHeading, setUserHeading] = useState(0);
   const [followUser, setFollowUser] = useState(true);
   const cameraRef = useRef<Mapbox.Camera>(null);
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const routeUpdateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const hasInitializedCameraRef = useRef(false);
   const rejectedRideIdsRef = useRef<Set<string>>(new Set());
+  const fetchingRouteRef = useRef(false);
+  const lastRerouteAtRef = useRef(0);
 
   // Initialize location and fetch current online status from server
   useEffect(() => {
@@ -69,6 +81,36 @@ export default function HomeScreen() {
     if (isOnline) {
       loadRides();
       startLocationPush();
+      const token = useAuthStore.getState().accessToken;
+      if (token) {
+        rideRealtime.connect(token, activeRide?.id || null);
+        const unsub = rideRealtime.onEvent((event, data) => {
+          if (
+            event === 'ride_offer' ||
+            event === 'ride_created' ||
+            event === 'ride_accepted' ||
+            event === 'ride_cancelled' ||
+            event === 'ride_reassigned' ||
+            event === 'ride_taken' ||
+            event === 'offer_expired'
+          ) {
+            if (event === 'ride_taken' || event === 'offer_expired') {
+              const takenId = data?.ride_id;
+              if (takenId) {
+                setAvailableRides((prev) => prev.filter((r) => String(r.id) !== String(takenId)));
+              }
+            }
+            loadRides();
+          }
+        });
+        const interval = setInterval(loadRides, 15000); // slower poll; WS wakes sooner
+        return () => {
+          clearInterval(interval);
+          unsub();
+          rideRealtime.disconnect();
+          stopLocationPush();
+        };
+      }
       const interval = setInterval(loadRides, 8000);
       return () => {
         clearInterval(interval);
@@ -78,8 +120,16 @@ export default function HomeScreen() {
       setActiveRide(null);
       setAvailableRides([]);
       stopLocationPush();
+      rideRealtime.disconnect();
     }
   }, [isOnline]);
+
+  useEffect(() => {
+    driverLocationService.setActiveRideId(activeRide?.id || null);
+    if (activeRide?.id) {
+      rideRealtime.subscribeRide(activeRide.id);
+    }
+  }, [activeRide?.id]);
 
   // Route tracking when active ride
   useEffect(() => {
@@ -99,24 +149,16 @@ export default function HomeScreen() {
     }
   }, [activeRide?.status, activeRide?.id]);
 
-  // Update route when driver location changes (debounced, NO camera fit)
+  // Off-route → refetch Directions; on-route → progress split only (no full redraw)
   useEffect(() => {
-    if (activeRide && routeCoords && hasInitializedCameraRef.current) {
-      // Clear previous timeout
-      if (routeUpdateTimeoutRef.current) {
-        clearTimeout(routeUpdateTimeoutRef.current);
-      }
-      // Update route after 10 seconds of no location change (NO camera refit)
-      routeUpdateTimeoutRef.current = setTimeout(() => {
-        fetchRoute(false);
-      }, 10000);
-    }
-    return () => {
-      if (routeUpdateTimeoutRef.current) {
-        clearTimeout(routeUpdateTimeoutRef.current);
-      }
-    };
-  }, [driverLoc.latitude, driverLoc.longitude]);
+    if (!activeRide || !routeCoords || !hasInitializedCameraRef.current) return;
+    const split = splitRouteProgress(routeCoords, driverLoc);
+    if (!split?.offRoute) return;
+    const now = Date.now();
+    if (now - lastRerouteAtRef.current < 8000) return;
+    lastRerouteAtRef.current = now;
+    fetchRoute(false);
+  }, [driverLoc.latitude, driverLoc.longitude, routeCoords, activeRide?.id]);
 
   const initLocation = async () => {
     try {
@@ -131,24 +173,34 @@ export default function HomeScreen() {
   };
 
   const startLocationPush = () => {
+    driverLocationService.setActiveRideId(activeRide?.id || null);
+    driverLocationService.start().catch(() => undefined);
+    // Smooth nav UI: high-frequency local GPS for route progress
+    if (!locationWatchRef.current) {
+      Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          timeInterval: 1000,
+          distanceInterval: 4,
+        },
+        (loc) => {
+          setDriverLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+          if (loc.coords.heading != null) {
+            setUserHeading(loc.coords.heading);
+          }
+        }
+      ).then((sub) => {
+        locationWatchRef.current = sub;
+      }).catch(() => undefined);
+    }
     if (locationIntervalRef.current) return;
     const push = async () => {
       try {
-        const { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          router.replace('/location-permission' as any);
-          return;
-        }
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-        setDriverLoc({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
-        if (loc.coords.heading !== null && loc.coords.heading !== undefined) {
-          setUserHeading(loc.coords.heading);
-        }
-        await driverEnhancedApi.updateLocation(loc.coords.latitude, loc.coords.longitude);
+        await driverLocationService.pushOnce();
       } catch {}
     };
     push();
-    locationIntervalRef.current = setInterval(push, 5000);
+    locationIntervalRef.current = setInterval(push, 10000);
   };
 
   const stopLocationPush = () => {
@@ -156,10 +208,16 @@ export default function HomeScreen() {
       clearInterval(locationIntervalRef.current);
       locationIntervalRef.current = null;
     }
+    if (locationWatchRef.current) {
+      locationWatchRef.current.remove();
+      locationWatchRef.current = null;
+    }
+    driverLocationService.stop().catch(() => undefined);
   };
 
   const fetchRoute = async (fitCamera: boolean = false) => {
-    if (!activeRide) return;
+    if (!activeRide || fetchingRouteRef.current) return;
+    fetchingRouteRef.current = true;
     try {
       let destLat: number, destLng: number;
       if (activeRide.status === 'accepted') {
@@ -170,23 +228,23 @@ export default function HomeScreen() {
         destLng = activeRide.dropoff_lng || activeRide.pickup_lng;
       }
 
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${driverLoc.longitude},${driverLoc.latitude};${destLng},${destLat}?geometries=geojson&overview=full&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
       const resp = await fetch(url);
       const data = await resp.json();
 
       if (data.routes?.[0]) {
         const route = data.routes[0];
-        setRouteCoords(route.geometry.coordinates);
+        setRouteCoords(route.geometry.coordinates as LngLat[]);
         setRouteInfo({
           distance: route.distance / 1000,
-          duration: route.duration / 60
+          duration: route.duration / 60,
         });
 
         if (cameraRef.current && fitCamera) {
-          const coords = route.geometry.coordinates;
-          const lngs = coords.map((c: number[]) => c[0]);
-          const lats = coords.map((c: number[]) => c[1]);
+          const coords = route.geometry.coordinates as LngLat[];
+          const lngs = coords.map((c) => c[0]);
+          const lats = coords.map((c) => c[1]);
           const ne = [Math.max(...lngs), Math.max(...lats)];
           const sw = [Math.min(...lngs), Math.min(...lats)];
           cameraRef.current.fitBounds(ne, sw, [100, 60, 300, 60], 1500);
@@ -194,6 +252,8 @@ export default function HomeScreen() {
       }
     } catch (error) {
       console.log('Error fetching route:', error);
+    } finally {
+      fetchingRouteRef.current = false;
     }
   };
 
@@ -318,36 +378,10 @@ export default function HomeScreen() {
           showPaymentCollection(activeRide.id, activeRide.fare);
         } catch (e: any) {
           const detail = e.response?.data?.detail || 'Failed to complete';
-          if (e.response?.status === 400 && detail.includes('km away')) {
-            Alert.alert('Not at Destination', detail, [
-              { text: 'OK', style: 'cancel' },
-              { text: 'Force Complete', style: 'destructive', onPress: () => handleForceComplete() },
-            ]);
-          } else {
-            Alert.alert('Error', detail);
-          }
+          Alert.alert('Cannot Complete', detail);
         }
       }},
     ]);
-  };
-
-  const handleForceComplete = async () => {
-    if (!activeRide) return;
-    Alert.alert(
-      'Force Complete?',
-      'You are not near the drop-off location. Are you sure the customer has been dropped off?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Yes, Complete', style: 'destructive', onPress: async () => {
-          try {
-            await driverEnhancedApi.forceCompleteRide(activeRide.id);
-            showPaymentCollection(activeRide.id, activeRide.fare);
-          } catch (e: any) {
-            Alert.alert('Error', e.response?.data?.detail || 'Failed to complete');
-          }
-        }},
-      ]
-    );
   };
 
   const handleNavigate = () => {
@@ -416,19 +450,29 @@ export default function HomeScreen() {
     }
   };
 
-  // Build route GeoJSON
-  const routeGeoJSON = routeCoords ? {
-    type: 'Feature' as const,
-    geometry: { type: 'LineString' as const, coordinates: routeCoords },
-    properties: {},
-  } : null;
+  // Google Maps progress: grey behind, blue ahead
+  const progress = routeCoords
+    ? splitRouteProgress(routeCoords, driverLoc)
+    : null;
+  const travelledCoords = progress && progress.travelled.length >= 2 ? progress.travelled : null;
+  const remainingCoords =
+    progress && progress.remaining.length >= 2
+      ? progress.remaining
+      : routeCoords;
+
+  const liveRouteInfo = (() => {
+    if (!routeInfo || !progress) return routeInfo;
+    const remKm = remainingDistanceMeters(progress.remaining) / 1000;
+    const remMin = estimateRemainingMinutes(routeInfo.duration, progress.fraction);
+    return { distance: remKm, duration: remMin };
+  })();
 
   // Overview handler: show full route
   const handleOverview = () => {
     if (!routeCoords || !cameraRef.current) return;
     setFollowUser(false);
-    const lngs = routeCoords.map((c: number[]) => c[0]);
-    const lats = routeCoords.map((c: number[]) => c[1]);
+    const lngs = routeCoords.map((c) => c[0]);
+    const lats = routeCoords.map((c) => c[1]);
     const ne = [Math.max(...lngs), Math.max(...lats)];
     const sw = [Math.min(...lngs), Math.min(...lats)];
     cameraRef.current.fitBounds(ne, sw, [150, 80, 320, 80], 1500);
@@ -455,7 +499,7 @@ export default function HomeScreen() {
         style={styles.map}
         styleURL="mapbox://styles/mapbox/streets-v12"
         compassEnabled={false}
-        attributionEnabled={false}
+        attributionEnabled={true}
         logoEnabled={false}
         onTouchStart={() => setFollowUser(false)}
       >
@@ -476,20 +520,12 @@ export default function HomeScreen() {
           puckBearing="course"
         />
 
-        {/* Route - blue line like Google Maps */}
-        {routeGeoJSON && (
-          <Mapbox.ShapeSource id="routeSource" shape={routeGeoJSON}>
-            <Mapbox.LineLayer
-              id="routeLine"
-              style={{
-                lineColor: '#4285F4',
-                lineWidth: 6,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </Mapbox.ShapeSource>
-        )}
+        {/* Google Maps–style route progress: grey travelled + blue remaining */}
+        <RouteProgressLayers
+          travelled={travelledCoords}
+          remaining={remainingCoords}
+          idPrefix="driver-home"
+        />
 
         {/* Pickup marker */}
         {activeRide && activeRide.status === 'accepted' && (
@@ -581,11 +617,11 @@ export default function HomeScreen() {
             bounces={false}
           >
             {/* Route Info - Distance & Time */}
-            {routeInfo && (
+            {liveRouteInfo && (
               <View style={styles.rideRouteInfo}>
-                <Ionicons name="navigate" size={16} color={Colors.primary} />
+                <Ionicons name="navigate" size={16} color="#1A73E8" />
                 <Text style={styles.rideRouteText}>
-                  {routeInfo.distance.toFixed(1)} km • {Math.ceil(routeInfo.duration)} min
+                  {liveRouteInfo.distance.toFixed(1)} km • {Math.ceil(liveRouteInfo.duration)} min
                 </Text>
                 <Text style={styles.rideRouteTo}>
                   {activeRide.status === 'accepted' ? 'to pickup' : 'to dropoff'}
@@ -769,6 +805,8 @@ export default function HomeScreen() {
         onClose={() => setDrawerOpen(false)}
         isOnline={isOnline}
       />
+
+      <BottomNav hidden={!!activeRide || !isOnline} />
     </View>
   );
 }
@@ -839,46 +877,50 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingVertical: 10,
+    borderRadius: 24,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.5)',
-    zIndex: 99,
+    borderColor: '#E2E8F0',
   },
   statusBadgeDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
-    backgroundColor: '#999',
+    backgroundColor: '#94A3B8',
     marginRight: 8,
   },
   statusBadgeDotActive: {
-    backgroundColor: '#1B5E20',
+    backgroundColor: Colors.primary,
   },
   statusBadgeText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#666',
+    color: '#64748B',
   },
   statusBadgeTextActive: {
-    color: '#1B5E20',
+    color: Colors.primaryDark,
   },
 
 
   // Route info
 
   // Offline
-  offlineOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
-  offlineCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 32, alignItems: 'center', width: '100%' },
-  offlineTitle: { fontSize: 20, fontWeight: '700', color: '#000', marginTop: 12 },
-  offlineSubtext: { fontSize: 14, color: '#666', marginTop: 4, textAlign: 'center' },
-  goOnlineBtn: { backgroundColor: Colors.primary, paddingHorizontal: 32, paddingVertical: 14, borderRadius: 12, marginTop: 20 },
+  offlineOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(15,23,42,0.55)', justifyContent: 'center', alignItems: 'center', paddingHorizontal: 32 },
+  offlineCard: { backgroundColor: '#FFF', borderRadius: 24, padding: 32, alignItems: 'center', width: '100%', borderTopWidth: 4, borderTopColor: Colors.primary },
+  offlineTitle: { fontSize: 22, fontWeight: '700', color: '#0F172A', marginTop: 12 },
+  offlineSubtext: { fontSize: 14, color: '#64748B', marginTop: 4, textAlign: 'center' },
+  goOnlineBtn: { backgroundColor: Colors.primary, paddingHorizontal: 36, paddingVertical: 14, borderRadius: 999, marginTop: 20 },
   goOnlineBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 
   // Ride request card
-  rideRequestCard: { position: 'absolute', left: 16, right: 16, backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10 },
+  rideRequestCard: { position: 'absolute', left: 16, right: 16, backgroundColor: '#FFF', borderRadius: 20, padding: 18, shadowColor: '#0F172A', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 12, borderTopWidth: 3, borderTopColor: Colors.primary },
   rideRequestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   rideRequestBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
   rideRequestBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
@@ -892,11 +934,11 @@ const styles = StyleSheet.create({
   metaDot: { marginHorizontal: 4, color: '#CCC' },
   rideRequestActions: { flexDirection: 'row', gap: 12 },
   rejectBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EF4444' },
-  acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#4CAF50', borderRadius: 12, paddingVertical: 14, gap: 6 },
+  acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: Colors.primary, borderRadius: 12, paddingVertical: 14, gap: 6 },
   acceptBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
 
   // Active ride panel - compact, scrollable
-  activeRidePanel: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: 280, backgroundColor: '#FFF', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 16, paddingTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10 },
+  activeRidePanel: { position: 'absolute', left: 0, right: 0, bottom: 0, maxHeight: 280, backgroundColor: '#FFF', borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 16, paddingTop: 8, shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10, borderTopWidth: 3, borderTopColor: Colors.primary },
 
   // Panel scroll
   panelScroll: { flexGrow: 0 },
@@ -908,7 +950,7 @@ const styles = StyleSheet.create({
   rideRouteInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0F5FF',
+    backgroundColor: '#E8F0FE',
     paddingHorizontal: 10,
     paddingVertical: 8,
     borderRadius: 10,
@@ -918,7 +960,7 @@ const styles = StyleSheet.create({
   rideRouteText: {
     fontSize: 14,
     fontWeight: '700',
-    color: Colors.primary,
+    color: '#1A73E8',
   },
   rideRouteTo: {
     fontSize: 12,
@@ -954,25 +996,7 @@ const styles = StyleSheet.create({
   cancelBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFFFF', borderRadius: 10, paddingVertical: 12, gap: 6, borderWidth: 1.5, borderColor: '#EF4444' },
   cancelBtnText: { color: '#EF4444', fontSize: 15, fontWeight: '700' },
 
-  // No active ride badge
-  // Available ride request card
-  rideRequestCard: { position: 'absolute', left: 16, right: 16, backgroundColor: '#FFF', borderRadius: 16, padding: 16, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 10 },
-  rideRequestHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  rideRequestBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: Colors.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
-  rideRequestBadgeText: { color: '#FFF', fontSize: 12, fontWeight: '700' },
-  rideRequestFare: { fontSize: 22, fontWeight: '700', color: Colors.primary },
   rideLocations: { marginBottom: 10 },
-  rideLocRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
-  locDot: { width: 8, height: 8, borderRadius: 4, marginRight: 10 },
-  rideLocText: { fontSize: 14, color: '#333', flex: 1 },
-  rideRequestMeta: { flexDirection: 'row', alignItems: 'center', marginBottom: 14, gap: 4 },
-  metaText: { fontSize: 12, color: '#666', textTransform: 'capitalize' },
-  metaDot: { color: '#CCC' },
-  rideRequestActions: { flexDirection: 'row', gap: 12 },
-  rejectBtn: { width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#EF4444' },
-  acceptBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#10B981', borderRadius: 12, paddingVertical: 14, gap: 6 },
-  acceptBtnText: { color: '#FFF', fontSize: 16, fontWeight: '700' },
-
   noRideBadge: { position: 'absolute', bottom: 32, alignSelf: 'center', backgroundColor: 'rgba(255,255,255,0.95)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4, elevation: 3 },
   noRideText: { fontSize: 14, color: '#666', fontWeight: '600' },
 

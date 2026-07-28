@@ -1,142 +1,141 @@
 /**
- * Production-grade storage utility with fallback
- * Handles AsyncStorage errors gracefully
+ * Token storage — prefers expo-secure-store when available, else AsyncStorage.
  */
-
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// In-memory fallback storage
 const memoryStorage: { [key: string]: string } = {};
-
 let isAsyncStorageAvailable = true;
+let SecureStore: any = null;
 
-// Test AsyncStorage availability
+try {
+  // Optional dependency — installed when available
+  SecureStore = require('expo-secure-store');
+} catch {
+  SecureStore = null;
+}
+
+const SECURE_KEYS = new Set(['access_token', 'refresh_token']);
+
 (async () => {
   try {
     await AsyncStorage.setItem('__test__', 'test');
     await AsyncStorage.removeItem('__test__');
-    console.log('✅ AsyncStorage: Available');
-  } catch (error) {
+  } catch {
     isAsyncStorageAvailable = false;
-    console.warn('⚠️  AsyncStorage: Not available, using memory fallback');
   }
 })();
 
-/**
- * Set item in storage (AsyncStorage or memory fallback)
- */
+async function setSecure(key: string, value: string) {
+  if (SecureStore?.setItemAsync) {
+    await SecureStore.setItemAsync(key, value);
+    return;
+  }
+  if (isAsyncStorageAvailable) {
+    await AsyncStorage.setItem(key, value);
+    return;
+  }
+  memoryStorage[key] = value;
+}
+
+async function getSecure(key: string): Promise<string | null> {
+  if (SecureStore?.getItemAsync) {
+    return SecureStore.getItemAsync(key);
+  }
+  if (isAsyncStorageAvailable) {
+    return AsyncStorage.getItem(key);
+  }
+  return memoryStorage[key] || null;
+}
+
+async function removeSecure(key: string) {
+  if (SecureStore?.deleteItemAsync) {
+    await SecureStore.deleteItemAsync(key);
+    return;
+  }
+  if (isAsyncStorageAvailable) {
+    await AsyncStorage.removeItem(key);
+    return;
+  }
+  delete memoryStorage[key];
+}
+
 export const setItem = async (key: string, value: string): Promise<void> => {
+  if (SECURE_KEYS.has(key)) {
+    await setSecure(key, value);
+    return;
+  }
   if (isAsyncStorageAvailable) {
     try {
       await AsyncStorage.setItem(key, value);
       return;
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.setItem failed for key "${key}", using memory fallback`);
+    } catch {
       isAsyncStorageAvailable = false;
     }
   }
-
-  // Fallback to memory
   memoryStorage[key] = value;
 };
 
-/**
- * Get item from storage (AsyncStorage or memory fallback)
- */
 export const getItem = async (key: string): Promise<string | null> => {
+  if (SECURE_KEYS.has(key)) {
+    return getSecure(key);
+  }
   if (isAsyncStorageAvailable) {
     try {
-      const value = await AsyncStorage.getItem(key);
-      return value;
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.getItem failed for key "${key}", using memory fallback`);
+      return await AsyncStorage.getItem(key);
+    } catch {
       isAsyncStorageAvailable = false;
     }
   }
-
-  // Fallback to memory
   return memoryStorage[key] || null;
 };
 
-/**
- * Remove item from storage
- */
 export const removeItem = async (key: string): Promise<void> => {
+  if (SECURE_KEYS.has(key)) {
+    await removeSecure(key);
+    return;
+  }
   if (isAsyncStorageAvailable) {
     try {
       await AsyncStorage.removeItem(key);
       return;
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.removeItem failed for key "${key}"`);
+    } catch {
       isAsyncStorageAvailable = false;
     }
   }
-
-  // Fallback to memory
   delete memoryStorage[key];
 };
 
-/**
- * Remove multiple items
- */
 export const multiRemove = async (keys: string[]): Promise<void> => {
-  if (isAsyncStorageAvailable) {
-    try {
-      await AsyncStorage.multiRemove(keys);
-      return;
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.multiRemove failed`);
-      isAsyncStorageAvailable = false;
-    }
+  for (const key of keys) {
+    await removeItem(key);
   }
-
-  // Fallback to memory
-  keys.forEach(key => delete memoryStorage[key]);
 };
 
-/**
- * Clear all storage
- */
 export const clear = async (): Promise<void> => {
+  await multiRemove(['access_token', 'refresh_token', 'user']);
   if (isAsyncStorageAvailable) {
     try {
       await AsyncStorage.clear();
-      return;
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.clear failed`);
+    } catch {
       isAsyncStorageAvailable = false;
     }
   }
-
-  // Fallback to memory
-  Object.keys(memoryStorage).forEach(key => delete memoryStorage[key]);
+  Object.keys(memoryStorage).forEach((k) => delete memoryStorage[k]);
 };
 
-/**
- * Get all keys
- */
 export const getAllKeys = async (): Promise<string[]> => {
   if (isAsyncStorageAvailable) {
     try {
       return await AsyncStorage.getAllKeys();
-    } catch (error) {
-      console.warn(`⚠️  AsyncStorage.getAllKeys failed`);
+    } catch {
       isAsyncStorageAvailable = false;
     }
   }
-
-  // Fallback to memory
   return Object.keys(memoryStorage);
 };
 
-/**
- * Check if AsyncStorage is working
- */
-export const isStorageAvailable = (): boolean => {
-  return isAsyncStorageAvailable;
-};
+export const isStorageAvailable = (): boolean => isAsyncStorageAvailable;
 
-// Export default storage object
 export default {
   setItem,
   getItem,

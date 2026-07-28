@@ -17,6 +17,7 @@ import { authApi } from '../src/api/auth';
 import { Button } from '../src/components/common/Button';
 import { Card } from '../src/components/common/Card';
 import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../src/constants/theme';
+import { BottomNav } from '../src/components/navigation/BottomNav';
 
 export default function EditProfileScreen() {
   const { driver } = useAuthStore();
@@ -187,6 +188,7 @@ export default function EditProfileScreen() {
           />
         </ScrollView>
       </KeyboardAvoidingView>
+      <BottomNav />
     </SafeAreaView>
   );
 }

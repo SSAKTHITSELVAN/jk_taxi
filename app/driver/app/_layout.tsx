@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { DarkTheme, ThemeProvider } from '@react-navigation/native';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack, router } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
@@ -32,7 +32,7 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={DarkTheme}>
+    <ThemeProvider value={DefaultTheme}>
       <Stack
         screenOptions={{
           headerShown: false,
@@ -43,8 +43,10 @@ export default function RootLayout() {
         <Stack.Screen name="index" />
         <Stack.Screen name="edit-profile" />
         <Stack.Screen name="rides-enhanced" />
+        <Stack.Screen name="wallet" />
+        <Stack.Screen name="ride-details" />
       </Stack>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </ThemeProvider>
   );
 }

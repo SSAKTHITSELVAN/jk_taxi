@@ -48,6 +48,20 @@ async def update_driver_status(
     db: Session = Depends(get_db)
 ):
     """Update driver online/offline status"""
+    from app.services.dispatch import driver_docs_ready, driver_location_fresh
+
+    if status_update.is_online:
+        ok, reason = driver_docs_ready(current_driver)
+        if not ok:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+        if current_driver.current_lat is None or current_driver.current_lng is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Share your GPS location before going online",
+            )
+        # Soft warning path: allow if coords exist even if slightly stale on first toggle
+        _ = driver_location_fresh(current_driver)
+
     current_driver.is_online = status_update.is_online
     db.commit()
     db.refresh(current_driver)

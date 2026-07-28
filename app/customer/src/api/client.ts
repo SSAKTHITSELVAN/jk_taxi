@@ -1,7 +1,13 @@
 import axios, { AxiosInstance, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_CONFIG } from '../config';
 import { router } from 'expo-router';
+import storage from '../utils/storage';
+
+const IS_DEV = typeof __DEV__ !== 'undefined' ? __DEV__ : false;
+
+function logDev(...args: any[]) {
+  if (IS_DEV) console.log(...args);
+}
 
 class ApiClient {
   private client: AxiosInstance;
@@ -21,24 +27,16 @@ class ApiClient {
 
     this.client.interceptors.request.use(
       async (config) => {
-        console.log('🌐 [API REQUEST]', config.method?.toUpperCase(), config.url);
-        console.log('📍 [BASE URL]', config.baseURL);
-        console.log('📦 [DATA]', JSON.stringify(config.data));
-
+        logDev('[API]', config.method?.toUpperCase(), config.url);
         try {
-          const token = await AsyncStorage.getItem('access_token');
+          const token = await storage.getItem('access_token');
           if (token) {
             this.inMemoryToken = token;
             config.headers.Authorization = `Bearer ${token}`;
-            console.log('🔑 [AUTH] Token added from storage');
           } else if (this.inMemoryToken) {
             config.headers.Authorization = `Bearer ${this.inMemoryToken}`;
-            console.log('🔑 [AUTH] Token added from memory');
-          } else {
-            console.log('🔓 [AUTH] No token');
           }
-        } catch (error) {
-          console.log('⚠️  [STORAGE] Could not access token storage:', error);
+        } catch {
           if (this.inMemoryToken) {
             config.headers.Authorization = `Bearer ${this.inMemoryToken}`;
           }
@@ -49,21 +47,16 @@ class ApiClient {
     );
 
     this.client.interceptors.response.use(
-      (response) => {
-        console.log('✅ [API SUCCESS]', response.status, response.config.url);
-        return response;
-      },
+      (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
         if (error.response?.status === 401 && !originalRequest._retry) {
-          // Don't retry refresh endpoint itself
           if (originalRequest.url?.includes('/auth/refresh')) {
             await this.handleLogout();
             return Promise.reject(error);
           }
 
-          // Try to refresh the token
           if (this.isRefreshing) {
             return new Promise((resolve, reject) => {
               this.failedQueue.push({ resolve, reject });
@@ -77,10 +70,8 @@ class ApiClient {
           this.isRefreshing = true;
 
           try {
-            const refreshToken = await AsyncStorage.getItem('refresh_token');
-            if (!refreshToken) {
-              throw new Error('No refresh token');
-            }
+            const refreshToken = await storage.getItem('refresh_token');
+            if (!refreshToken) throw new Error('No refresh token');
 
             const response = await axios.post(
               `${API_CONFIG.BASE_URL}/api/auth/refresh`,
@@ -89,21 +80,16 @@ class ApiClient {
             );
 
             const { access_token, refresh_token: newRefreshToken } = response.data;
-
             this.inMemoryToken = access_token;
-            await AsyncStorage.setItem('access_token', access_token);
-            await AsyncStorage.setItem('refresh_token', newRefreshToken);
+            await storage.setItem('access_token', access_token);
+            await storage.setItem('refresh_token', newRefreshToken);
 
-            console.log('🔄 [TOKEN REFRESHED] New access token obtained');
-
-            // Retry all queued requests
             this.failedQueue.forEach(({ resolve }) => resolve(access_token));
             this.failedQueue = [];
 
             originalRequest.headers.Authorization = `Bearer ${access_token}`;
             return this.client(originalRequest);
           } catch (refreshError) {
-            console.log('🚪 [REFRESH FAILED] Logging out');
             this.failedQueue.forEach(({ reject }) => reject(refreshError));
             this.failedQueue = [];
             await this.handleLogout();
@@ -113,19 +99,10 @@ class ApiClient {
           }
         }
 
-        // Don't log 404 "No active ride" as error
         const isNoActiveRide = error.response?.status === 404 &&
-                               error.config?.url?.includes('/active');
-
-        if (!isNoActiveRide && error.response?.status !== 401) {
-          console.error('❌ [API ERROR]', error.message);
-          console.error('📍 [URL]', error.config?.url);
-          if (error.response) {
-            console.error('📝 [STATUS]', error.response.status);
-            console.error('📝 [DATA]', JSON.stringify(error.response.data));
-          }
-        } else if (isNoActiveRide) {
-          console.log('ℹ️  [NO ACTIVE RIDE] No active ride found (this is normal)');
+          error.config?.url?.includes('/active');
+        if (!isNoActiveRide && error.response?.status !== 401 && IS_DEV) {
+          console.warn('[API ERROR]', error.response?.status, error.config?.url);
         }
 
         return Promise.reject(error);
@@ -135,23 +112,16 @@ class ApiClient {
 
   private async handleLogout() {
     this.inMemoryToken = null;
-
     try {
-      await AsyncStorage.multiRemove(['access_token', 'refresh_token', 'user']);
-      console.log('✅ [LOGOUT] Storage cleared');
-    } catch (error) {
-      console.log('⚠️  [STORAGE] Could not clear storage:', error);
+      await storage.multiRemove(['access_token', 'refresh_token', 'user']);
+    } catch {
+      // ignore
     }
-
-    if (this.logoutCallback) {
-      this.logoutCallback();
-    }
-
+    if (this.logoutCallback) this.logoutCallback();
     try {
       router.replace('/login');
-      console.log('✅ [LOGOUT] Redirected to login');
-    } catch (error) {
-      console.log('⚠️  [NAVIGATION] Could not redirect to login:', error);
+    } catch {
+      // ignore
     }
   }
 
@@ -177,8 +147,7 @@ class ApiClient {
 }
 
 const apiClientInstance = new ApiClient();
-export const apiClient = apiClientInstance.getClient();
+export const setLogoutCallback = (cb: () => void) => apiClientInstance.setLogoutCallback(cb);
 export const setApiToken = (token: string) => apiClientInstance.setToken(token);
 export const clearApiToken = () => apiClientInstance.clearToken();
-export const setLogoutCallback = (callback: () => void) => apiClientInstance.setLogoutCallback(callback);
-export default apiClient;
+export default apiClientInstance.getClient();

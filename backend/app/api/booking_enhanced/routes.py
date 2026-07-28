@@ -1,19 +1,38 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from uuid import UUID
 from datetime import datetime, time
-from app.core.dependencies import get_db, get_current_user
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
+from app.core.dependencies import get_db, get_current_user, get_current_driver
 from app.schemas.ride_enhanced import (
     BookingCreate, RideEnhancedResponse, VerifyOTPRequest,
     VehicleCategoryResponse, FareBreakdown
 )
-from app.models.ride_enhanced import RideEnhanced
+from app.models.ride_enhanced import RideEnhanced, generate_ride_otp
 from app.models.vehicle_category import VehicleCategoryConfig
 from app.models.user import User
 from app.models.driver import Driver
+from app.services.realtime import hub
+from app.core.config import settings
 
 router = APIRouter()
+
+
+async def _emit_ride(ride: RideEnhanced, event: str, extra=None):
+    data = {
+        "ride_id": str(ride.id),
+        "status": ride.status,
+        "user_id": str(ride.user_id),
+        "driver_id": str(ride.driver_id) if ride.driver_id else None,
+        "updated_at": ride.updated_at.isoformat() if ride.updated_at else None,
+    }
+    if extra:
+        data.update(extra)
+    await hub.publish_ride(str(ride.id), event, data)
+    await hub.publish_user(str(ride.user_id), event, data)
+    if ride.driver_id:
+        await hub.publish_driver(str(ride.driver_id), event, data)
+    # Do NOT blast ride_created to all drivers — sequential dispatch uses ride_offer
 
 
 def calculate_fare(
@@ -22,20 +41,18 @@ def calculate_fare(
     is_night: bool = False,
     toll_charges: float = 0.0,
     trip_type: str = "one_way",
-    rental_hours: int = 1
+    rental_hours: int = 1,
+    surge_multiplier: float = 1.0,
 ) -> dict:
     """Calculate detailed fare breakdown"""
     platform_fee = 40.0
     category_name = vehicle_category.name
+    surge_multiplier = max(1.0, float(surge_multiplier or 1.0))
 
     if trip_type == "rental":
-        # Rental: ₹280/hr base, 10km free per hour
-        # Bike: no rental allowed (handled at validation level)
-        # Mini: same rate (no surcharge)
-        # Others (sedan, suv, auto): +20% on hourly rate
         hourly_rate = 280.0
         if category_name not in ("mini", "bike"):
-            hourly_rate = hourly_rate * 1.2  # 20% more for sedan/suv/auto
+            hourly_rate = hourly_rate * 1.2
 
         base_fare = hourly_rate * rental_hours
         free_km = 10.0 * rental_hours
@@ -45,11 +62,14 @@ def calculate_fare(
         base_fare = vehicle_category.base_fare
         distance_fare = distance_km * vehicle_category.per_km_rate
 
-    # Night charges (10 PM - 6 AM)
+    # Apply surge to distance+base (not platform fee)
+    base_fare = base_fare * surge_multiplier
+    distance_fare = distance_fare * surge_multiplier
+
     night_charges = (base_fare + distance_fare) * 0.15 if is_night else 0.0
 
     subtotal = base_fare + distance_fare + platform_fee + toll_charges + night_charges
-    gst = subtotal * 0.05  # 5% GST
+    gst = subtotal * 0.05
 
     total = subtotal + gst
 
@@ -61,8 +81,28 @@ def calculate_fare(
         "toll_charges": round(toll_charges, 2),
         "night_charges": round(night_charges, 2),
         "waiting_charges": 0.0,
-        "total": round(total, 2)
+        "total": round(total, 2),
+        "surge_multiplier": surge_multiplier,
     }
+
+
+def current_surge_multiplier(now=None) -> float:
+    """Simple peak-hour surge (P5 starter). Replace with supply/demand later."""
+    now = now or datetime.now()
+    hour = now.hour
+    if 8 <= hour < 11 or 17 <= hour < 21:
+        return float(getattr(settings, "SURGE_PEAK_MULTIPLIER", 1.2))
+    return 1.0
+
+
+def cancellation_fee_for_status(status_value: str) -> float:
+    if status_value == "pending":
+        return 0.0
+    if status_value == "accepted":
+        return float(getattr(settings, "CANCEL_FEE_ACCEPTED", 30.0))
+    if status_value == "started":
+        return float(getattr(settings, "CANCEL_FEE_STARTED", 50.0))
+    return 0.0
 
 
 @router.get("/vehicle-categories", response_model=List[VehicleCategoryResponse])
@@ -87,8 +127,18 @@ async def calculate_fare_estimate(
     scheduled_datetime: datetime = None,
     db: Session = Depends(get_db)
 ):
-    """Calculate fare estimate before booking"""
-    # Get vehicle category config
+    """Calculate fare estimate using road-network distance when Mapbox is configured."""
+    from app.services.geo import assert_service_area
+    from app.services.routing import get_driving_route
+
+    for label, lat, lng in (
+        ("Pickup", pickup_lat, pickup_lng),
+        ("Dropoff", dropoff_lat, dropoff_lng),
+    ):
+        err = assert_service_area(lat, lng, label)
+        if err:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err)
+
     category_config = db.query(VehicleCategoryConfig).filter(
         VehicleCategoryConfig.name == vehicle_category
     ).first()
@@ -99,16 +149,21 @@ async def calculate_fare_estimate(
             detail="Vehicle category not found"
         )
 
-    # Calculate distance (simple formula for MVP)
-    distance_km = abs(dropoff_lat - pickup_lat) + abs(dropoff_lng - pickup_lng)
-    distance_km = max(2.0, distance_km * 100)  # Minimum 2km
+    route = get_driving_route(pickup_lat, pickup_lng, dropoff_lat, dropoff_lng)
+    distance_km = route.distance_km
 
-    # Check if night time
     ride_time = scheduled_datetime or datetime.now()
     is_night = ride_time.hour >= 22 or ride_time.hour < 6
+    surge = current_surge_multiplier(ride_time)
 
-    # Calculate fare
-    fare_breakdown = calculate_fare(distance_km, category_config, is_night, trip_type=trip_type, rental_hours=rental_hours)
+    fare_breakdown = calculate_fare(
+        distance_km, category_config, is_night, trip_type=trip_type, rental_hours=rental_hours,
+        surge_multiplier=surge,
+    )
+    fare_breakdown["distance_km"] = round(distance_km, 2)
+    fare_breakdown["duration_minutes"] = round(route.duration_seconds / 60.0, 1)
+    fare_breakdown["route_source"] = route.source
+    fare_breakdown["surge_multiplier"] = surge
 
     return FareBreakdown(**fare_breakdown)
 
@@ -119,7 +174,22 @@ async def create_booking_enhanced(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Create a new enhanced ride booking"""
+    """Create a new enhanced ride booking and start sequential one-by-one offers."""
+    from app.services.geo import assert_service_area
+    from app.services.routing import get_driving_route
+    from app.services.dispatch import (
+        user_has_active_ride,
+        begin_dispatch,
+        assign_next_offer,
+        emit_ride_offer,
+        scheduled_ready_for_dispatch,
+    )
+
+    if user_has_active_ride(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="You already have an active ride. Complete or cancel it before booking again.",
+        )
 
     # Get vehicle category config
     category_config = db.query(VehicleCategoryConfig).filter(
@@ -139,25 +209,47 @@ async def create_booking_enhanced(
             detail="Rental is not available for Bike category"
         )
 
-    # Calculate distance
+    pickup_err = assert_service_area(booking.pickup_lat, booking.pickup_lng, "Pickup")
+    if pickup_err:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=pickup_err)
+
+    route_geometry = None
+    route_duration_seconds = None
+    route_source = None
+    eta_minutes = 5
+
+    # Calculate distance via road network when dropoff exists
     if booking.dropoff_lat and booking.dropoff_lng:
-        distance_km = abs(booking.dropoff_lat - booking.pickup_lat) + abs(booking.dropoff_lng - booking.pickup_lng)
-        distance_km = max(2.0, distance_km * 100)  # Minimum 2km
+        drop_err = assert_service_area(booking.dropoff_lat, booking.dropoff_lng, "Dropoff")
+        if drop_err:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=drop_err)
+        route = get_driving_route(
+            booking.pickup_lat, booking.pickup_lng,
+            booking.dropoff_lat, booking.dropoff_lng,
+        )
+        distance_km = route.distance_km
+        route_geometry = route.coordinates
+        route_duration_seconds = route.duration_seconds
+        route_source = route.source
+        eta_minutes = max(1, int(round(route.duration_seconds / 60.0)))
     else:
         # For rental, use estimated distance
-        distance_km = 10.0  # 10km free per hour
+        distance_km = 10.0 * max(1, 1)  # base free km assumption
 
     # Check if night time
     ride_time = booking.scheduled_datetime or datetime.now()
     is_night = ride_time.hour >= 22 or ride_time.hour < 6
+    surge = current_surge_multiplier(ride_time)
 
     # Calculate fare breakdown
-    fare_breakdown = calculate_fare(distance_km, category_config, is_night, trip_type=booking.trip_type.value)
+    fare_breakdown = calculate_fare(
+        distance_km, category_config, is_night, trip_type=booking.trip_type.value,
+        surge_multiplier=surge,
+    )
 
     # Convert stops to dict format
     stops_data = [stop.model_dump() for stop in booking.stops]
 
-    # Create ride with user's static OTP (like Rapido)
     new_ride = RideEnhanced(
         user_id=current_user.id,
         trip_type=booking.trip_type.value,
@@ -177,9 +269,15 @@ async def create_booking_enhanced(
         passenger_notes=booking.passenger_notes,
         preferences=booking.preferences.model_dump(),
         driver_notes=booking.driver_notes,
-        ride_otp=current_user.ride_otp,  # Copy user's static OTP
+        # Rapido-style: same OTP for every ride of this user
+        ride_otp=current_user.ride_otp or generate_ride_otp(),
         payment_method=booking.payment_method,
         distance_km=distance_km,
+        eta_minutes=eta_minutes,
+        route_geometry=route_geometry,
+        route_duration_seconds=route_duration_seconds,
+        route_source=route_source,
+        surge_multiplier=surge,
         base_fare=fare_breakdown["base_fare"],
         distance_fare=fare_breakdown["distance_fare"],
         platform_fee=fare_breakdown["platform_fee"],
@@ -190,9 +288,26 @@ async def create_booking_enhanced(
         fare=fare_breakdown["total"]
     )
 
+    begin_dispatch(new_ride)
     db.add(new_ride)
     db.commit()
     db.refresh(new_ride)
+
+    # Notify customer that search started (not a blast to all drivers)
+    await _emit_ride(new_ride, "ride_created", {
+        "vehicle_category": new_ride.vehicle_category,
+        "is_scheduled": new_ride.is_scheduled,
+        "offer_ttl_seconds": settings.OFFER_TTL_SECONDS,
+        "sequential": settings.SEQUENTIAL_DISPATCH,
+    })
+
+    # First exclusive offer — only if ready for dispatch now
+    if scheduled_ready_for_dispatch(new_ride):
+        offered = assign_next_offer(db, new_ride)
+        if offered:
+            db.commit()
+            db.refresh(new_ride)
+            await emit_ride_offer(new_ride, offered)
 
     return enrich_ride_with_driver(new_ride, db)
 
@@ -216,7 +331,7 @@ def enrich_ride_with_driver(ride: RideEnhanced, db: Session) -> dict:
     return ride_dict
 
 
-RIDE_TIMEOUT_MINUTES = 5  # Auto-cancel pending rides after 5 minutes
+RIDE_TIMEOUT_MINUTES = max(1, settings.OFFER_TTL_SECONDS // 60)
 
 
 @router.get("/active", response_model=RideEnhancedResponse)
@@ -224,30 +339,21 @@ async def get_active_booking(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get user's active ride (auto-cancels if pending too long)"""
+    """Get user's active ride (uses dispatch TTL + scheduled rules — no raw created_at)."""
+    from app.services.dispatch import expire_stale_pending_rides
+
+    expire_stale_pending_rides(db)
+
     active_ride = db.query(RideEnhanced).filter(
         RideEnhanced.user_id == current_user.id,
         RideEnhanced.status.in_(["pending", "accepted", "started"])
-    ).first()
+    ).order_by(RideEnhanced.created_at.desc()).first()
 
     if not active_ride:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="No active ride found"
         )
-
-    # Auto-cancel if pending for too long
-    if active_ride.status == "pending" and active_ride.created_at:
-        elapsed = datetime.now(active_ride.created_at.tzinfo) - active_ride.created_at
-        if elapsed.total_seconds() > RIDE_TIMEOUT_MINUTES * 60:
-            active_ride.status = "cancelled"
-            active_ride.cancellation_reason = "Auto-cancelled: no captain available within 5 minutes"
-            db.commit()
-            db.refresh(active_ride)
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Ride auto-cancelled: no captain available within 5 minutes"
-            )
 
     return enrich_ride_with_driver(active_ride, db)
 
@@ -271,17 +377,30 @@ async def get_active_ride_tracking(
 
     driver_lat = None
     driver_lng = None
+    location_updated_at = None
     if active_ride.driver_id:
         driver = db.query(Driver).filter(Driver.id == active_ride.driver_id).first()
         if driver:
             driver_lat = driver.current_lat
             driver_lng = driver.current_lng
+            location_updated_at = (
+                driver.location_updated_at.isoformat()
+                if getattr(driver, "location_updated_at", None)
+                else None
+            )
+
+    cached = hub.get_last_location(str(active_ride.id)) or {}
 
     return {
         "ride_id": str(active_ride.id),
         "status": active_ride.status,
-        "driver_lat": driver_lat,
-        "driver_lng": driver_lng,
+        "driver_lat": cached.get("latitude", driver_lat),
+        "driver_lng": cached.get("longitude", driver_lng),
+        "heading": cached.get("heading"),
+        "speed": cached.get("speed"),
+        "accuracy": cached.get("accuracy"),
+        "sequence": cached.get("sequence"),
+        "location_updated_at": cached.get("recorded_at") or location_updated_at,
         "pickup_lat": active_ride.pickup_lat,
         "pickup_lng": active_ride.pickup_lng,
         "dropoff_lat": active_ride.dropoff_lat,
@@ -325,31 +444,45 @@ async def get_nearby_drivers_count(
 async def get_nearby_drivers_locations(
     lat: float = Query(..., description="User latitude"),
     lng: float = Query(..., description="User longitude"),
+    vehicle_category: Optional[str] = Query(None, description="bike|auto|mini|sedan|suv|premium — omit for all"),
+    women_only: bool = Query(False, description="Only women captains"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get locations of online drivers near the user for map display"""
+    """Nearby online drivers for map pins, optionally filtered by vehicle category."""
+    from app.services.dispatch import normalize_driver_category, vehicle_matches
+
     online_drivers = db.query(Driver).filter(
-        Driver.is_online == True,
-        Driver.is_active == True,
+        Driver.is_online == True,  # noqa: E712
+        Driver.is_active == True,  # noqa: E712
         Driver.current_lat.isnot(None),
         Driver.current_lng.isnot(None),
     ).all()
 
-    radius = 0.15  # ~15km radius
+    want = (vehicle_category or "").lower().strip() or None
+    radius = 0.15  # ~15km bbox approx
     drivers = []
     for d in online_drivers:
+        if women_only and (getattr(d, "gender", None) or "").lower() != "female":
+            continue
         lat_diff = abs(d.current_lat - lat)
         lng_diff = abs(d.current_lng - lng)
-        if lat_diff <= radius and lng_diff <= radius:
-            drivers.append({
-                "id": str(d.id),
-                "latitude": d.current_lat,
-                "longitude": d.current_lng,
-                "vehicle_type": d.vehicle_type,
-            })
+        if lat_diff > radius or lng_diff > radius:
+            continue
+        category = normalize_driver_category(d.vehicle_type)
+        if want and want != "all":
+            if not vehicle_matches(d, want) and category != want:
+                continue
+        drivers.append({
+            "id": str(d.id),
+            "latitude": d.current_lat,
+            "longitude": d.current_lng,
+            "vehicle_type": d.vehicle_type,
+            "category": category,
+            "gender": getattr(d, "gender", None),
+        })
 
-    return {"drivers": drivers}
+    return {"drivers": drivers, "filter": want or "all", "count": len(drivers)}
 
 
 @router.get("/{ride_id}", response_model=RideEnhancedResponse)
@@ -404,11 +537,15 @@ async def cancel_booking(
             detail="Ride is already cancelled"
         )
 
+    prior_status = ride.status
+    fee = cancellation_fee_for_status(prior_status)
     ride.status = "cancelled"
     ride.cancellation_reason = reason or None
+    ride.cancellation_fee = fee
     db.commit()
     db.refresh(ride)
 
+    await _emit_ride(ride, "ride_cancelled", {"reason": reason, "cancellation_fee": fee})
     return enrich_ride_with_driver(ride, db)
 
 
@@ -452,15 +589,31 @@ from app.core.security import decode_token
 _security = HTTPBearer()
 
 
+def _assert_ride_payment_actor(payload: dict, ride: RideEnhanced):
+    """Only the ride customer or assigned driver may operate payment endpoints."""
+    subject = payload.get("sub")
+    role = payload.get("role")
+    if not subject:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    if role == "user" and str(ride.user_id) == subject:
+        return
+    if role == "driver" and ride.driver_id and str(ride.driver_id) == subject:
+        return
+    raise HTTPException(status_code=403, detail="Not allowed to pay for this ride")
+
+
 @router.post("/{ride_id}/payment/create-order", response_model=CreateOrderResponse)
 async def create_payment_order(
     ride_id: UUID,
     credentials: HTTPAuthorizationCredentials = Security(_security),
     db: Session = Depends(get_db),
 ):
-    """Create a Razorpay order for a completed ride (callable by customer or driver)"""
+    """Create a Razorpay order for a completed ride (customer or assigned driver only)"""
     import razorpay
     from app.core.config import settings
+
+    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=503, detail="Payment provider not configured")
 
     payload = decode_token(credentials.credentials)
     if not payload or payload.get("type") != "access":
@@ -470,6 +623,8 @@ async def create_payment_order(
 
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
+
+    _assert_ride_payment_actor(payload, ride)
 
     if ride.status != "completed":
         raise HTTPException(status_code=400, detail="Payment only for completed rides")
@@ -486,6 +641,10 @@ async def create_payment_order(
         "receipt": f"ride_{ride_id}",
         "notes": {"ride_id": str(ride_id)},
     })
+
+    # Bind order to ride until verification (prefix keeps cash/txn ids distinct)
+    ride.transaction_id = f"order:{order['id']}"
+    db.commit()
 
     return {
         "order_id": order["id"],
@@ -506,14 +665,32 @@ async def verify_payment(
     import razorpay
     from app.core.config import settings
 
+    if not settings.RAZORPAY_KEY_ID or not settings.RAZORPAY_KEY_SECRET:
+        raise HTTPException(status_code=503, detail="Payment provider not configured")
+
     payload = decode_token(credentials.credentials)
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Invalid token")
+
+    # Path ride_id is authoritative; reject mismatched body ride_id
+    if payment_data.ride_id and str(payment_data.ride_id) != str(ride_id):
+        raise HTTPException(status_code=400, detail="ride_id mismatch")
 
     ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
 
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
+
+    _assert_ride_payment_actor(payload, ride)
+
+    if ride.payment_status == "paid":
+        return {"message": "Payment already verified", "transaction_id": ride.transaction_id}
+
+    expected_order = None
+    if ride.transaction_id and ride.transaction_id.startswith("order:"):
+        expected_order = ride.transaction_id.split("order:", 1)[1]
+    if expected_order and payment_data.razorpay_order_id != expected_order:
+        raise HTTPException(status_code=400, detail="Order does not belong to this ride")
 
     client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
 
@@ -531,25 +708,34 @@ async def verify_payment(
     ride.transaction_id = payment_data.razorpay_payment_id
     db.commit()
 
+    await _emit_ride(ride, "payment_paid", {"transaction_id": payment_data.razorpay_payment_id})
     return {"message": "Payment verified successfully", "transaction_id": payment_data.razorpay_payment_id}
 
 
 @router.post("/{ride_id}/payment/cash")
 async def mark_cash_payment(
     ride_id: UUID,
+    current_driver: Driver = Depends(get_current_driver),
     db: Session = Depends(get_db),
 ):
-    """Mark ride as paid by cash (called by driver)"""
+    """Mark ride as paid by cash — assigned driver only"""
     ride = db.query(RideEnhanced).filter(RideEnhanced.id == ride_id).first()
 
     if not ride:
         raise HTTPException(status_code=404, detail="Ride not found")
 
+    if not ride.driver_id or ride.driver_id != current_driver.id:
+        raise HTTPException(status_code=403, detail="Only the assigned driver can confirm cash payment")
+
     if ride.status != "completed":
         raise HTTPException(status_code=400, detail="Ride not completed yet")
+
+    if ride.payment_status == "paid":
+        return {"message": "Cash payment already recorded"}
 
     ride.payment_status = "paid"
     ride.payment_method = "cash"
     db.commit()
 
+    await _emit_ride(ride, "payment_paid", {"payment_method": "cash"})
     return {"message": "Cash payment recorded"}

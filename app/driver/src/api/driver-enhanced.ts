@@ -2,9 +2,23 @@ import apiClient from './client';
 import { EnhancedRide, VerifyOTPRequest } from '../types/enhanced';
 
 export const driverEnhancedApi = {
-  // Update driver location
-  updateLocation: async (latitude: number, longitude: number): Promise<{ status: string }> => {
-    const response = await apiClient.post<{ status: string }>('/api/v2/driver/location', { latitude, longitude });
+  // Update driver location (enriched payload for live tracking)
+  updateLocation: async (payload: {
+    latitude: number;
+    longitude: number;
+    accuracy?: number;
+    heading?: number;
+    speed?: number;
+    sequence?: number;
+    ride_id?: string;
+    recorded_at?: string;
+  } | number, longitude?: number): Promise<{ status: string }> => {
+    // Back-compat: updateLocation(lat, lng)
+    const body =
+      typeof payload === 'number'
+        ? { latitude: payload, longitude: longitude as number }
+        : payload;
+    const response = await apiClient.post<{ status: string }>('/api/v2/driver/location', body);
     return response.data;
   },
 
@@ -41,12 +55,6 @@ export const driverEnhancedApi = {
   // Complete ride
   completeRide: async (rideId: string): Promise<EnhancedRide> => {
     const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/complete`);
-    return response.data;
-  },
-
-  // Force complete ride (bypass location check)
-  forceCompleteRide: async (rideId: string): Promise<EnhancedRide> => {
-    const response = await apiClient.post<EnhancedRide>(`/api/v2/driver/rides/${rideId}/complete?force=true`);
     return response.data;
   },
 

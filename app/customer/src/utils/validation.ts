@@ -17,6 +17,6 @@ export const validateName = (name: string): boolean => {
 };
 
 export const validateOTP = (otp: string): boolean => {
-  const otpRegex = /^[0-9]{6}$/;
+  const otpRegex = /^[0-9]{4}$/;
   return otpRegex.test(otp);
 };

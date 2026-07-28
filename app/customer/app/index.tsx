@@ -5,10 +5,13 @@ import * as Location from 'expo-location';
 import { useAuthStore } from '../src/store/authStore';
 import { useRideStore } from '../src/store/rideStore';
 import { MapHomeScreen } from '../src/components/map/MapHomeScreen';
+import { BottomNav } from '../src/components/navigation/BottomNav';
+import { Colors } from '../src/constants/theme';
 
 export default function HomeScreen() {
   const { getActiveRide, activeRide } = useRideStore();
   const [locationChecked, setLocationChecked] = useState(false);
+  const hideNav = !!(activeRide && ['pending', 'accepted', 'started'].includes(activeRide.status));
 
   useEffect(() => {
     getActiveRide();
@@ -97,6 +100,7 @@ export default function HomeScreen() {
   return (
     <View style={styles.container}>
       <MapHomeScreen onBookRide={handleBookRide} />
+      <BottomNav hidden={hideNav} />
     </View>
   );
 }
@@ -104,5 +108,6 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Colors.background,
   },
 });

@@ -9,8 +9,8 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 from uuid import UUID
 
-from app.core.dependencies import get_db, get_current_user
-from app.models.user import User
+from app.core.dependencies import get_db, get_current_admin
+from app.models.admin import Admin
 from app.models.driver import Driver
 from app.models.ride_enhanced import RideEnhanced
 from app.models.vehicle_category import VehicleCategoryConfig
@@ -23,14 +23,9 @@ from app.schemas.ride_enhanced import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-def verify_admin(current_user: User = Depends(get_current_user)):
-    """Verify that the current user is an admin"""
-    if current_user.role != "admin":
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required"
-        )
-    return current_user
+def verify_admin(admin: Admin = Depends(get_current_admin)) -> Admin:
+    """Require a valid admin JWT (Admin table), not a User.role field."""
+    return admin
 
 
 # ============= Vehicle Categories Management =============
@@ -38,7 +33,7 @@ def verify_admin(current_user: User = Depends(get_current_user)):
 @router.get("/vehicle-categories", response_model=List[VehicleCategoryResponse])
 async def get_all_vehicle_categories(
     include_inactive: bool = False,
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get all vehicle categories (including inactive if specified)"""
@@ -54,7 +49,7 @@ async def get_all_vehicle_categories(
 @router.post("/vehicle-categories", response_model=VehicleCategoryResponse, status_code=status.HTTP_201_CREATED)
 async def create_vehicle_category(
     category: VehicleCategoryCreate,
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Create a new vehicle category"""
@@ -82,7 +77,7 @@ async def create_vehicle_category(
 async def update_vehicle_category(
     category_id: UUID,
     category_update: VehicleCategoryUpdate,
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Update a vehicle category"""
@@ -110,7 +105,7 @@ async def update_vehicle_category(
 @router.delete("/vehicle-categories/{category_id}")
 async def delete_vehicle_category(
     category_id: UUID,
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Delete (deactivate) a vehicle category"""
@@ -136,7 +131,7 @@ async def delete_vehicle_category(
 @router.get("/analytics/overview")
 async def get_analytics_overview(
     days: int = Query(7, ge=1, le=90),
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get overview analytics for the dashboard"""
@@ -203,7 +198,7 @@ async def get_analytics_overview(
 @router.get("/analytics/trip-types")
 async def get_trip_type_analytics(
     days: int = Query(7, ge=1, le=90),
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get analytics by trip type"""
@@ -238,7 +233,7 @@ async def get_trip_type_analytics(
 @router.get("/analytics/vehicle-categories")
 async def get_vehicle_category_analytics(
     days: int = Query(7, ge=1, le=90),
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get analytics by vehicle category"""
@@ -273,7 +268,7 @@ async def get_vehicle_category_analytics(
 @router.get("/analytics/hourly-distribution")
 async def get_hourly_ride_distribution(
     days: int = Query(7, ge=1, le=90),
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get ride distribution by hour of day"""
@@ -304,7 +299,7 @@ async def get_hourly_ride_distribution(
 @router.get("/analytics/preferences")
 async def get_preference_analytics(
     days: int = Query(7, ge=1, le=90),
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get analytics on ride preferences usage"""
@@ -356,7 +351,7 @@ async def get_preference_analytics(
 async def get_recent_rides(
     limit: int = Query(50, ge=1, le=200),
     status_filter: Optional[str] = None,
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get recent rides for monitoring"""
@@ -396,7 +391,7 @@ async def get_recent_rides(
 
 @router.get("/analytics/revenue-forecast")
 async def get_revenue_forecast(
-    admin: User = Depends(verify_admin),
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get revenue trends and forecast"""
@@ -443,6 +438,7 @@ async def get_revenue_forecast(
 
 @router.get("/drivers/earnings")
 async def get_all_drivers_earnings(
+    admin = Depends(verify_admin),
     db: Session = Depends(get_db)
 ):
     """Get earnings for all drivers - admin view"""

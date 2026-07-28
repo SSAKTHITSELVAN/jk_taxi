@@ -1,8 +1,15 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
 import Mapbox from '@rnmapbox/maps';
 import { MAPBOX_ACCESS_TOKEN, MAP_STYLES, MAP_PADDING, ANIMATION_DURATION } from '../../config/mapbox-config';
-import { Colors, Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
+import { Spacing, FontSizes, FontWeights, BorderRadius } from '../../constants/theme';
+import { RouteProgressLayers } from './RouteProgressLayers';
+import {
+  estimateRemainingMinutes,
+  remainingDistanceMeters,
+  splitRouteProgress,
+  type LngLat,
+} from '../../utils/routeProgress';
 
 Mapbox.setAccessToken(MAPBOX_ACCESS_TOKEN);
 
@@ -21,14 +28,13 @@ interface DriverMapViewProps {
 }
 
 interface RouteData {
-  coordinates: number[][];
+  coordinates: LngLat[];
   distance: number;
   duration: number;
 }
 
 /**
- * DriverMapView - Map view for drivers showing pickup, dropoff, and route
- * Includes driver's current location marker
+ * DriverMapView - Map with Google Maps–style travelled/remaining progress.
  */
 export const DriverMapView: React.FC<DriverMapViewProps> = ({
   pickup,
@@ -40,55 +46,52 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
   const cameraRef = useRef<Mapbox.Camera>(null);
   const [routeData, setRouteData] = useState<RouteData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const lastFetchRef = useRef(0);
 
   useEffect(() => {
     if (showRoute) {
-      fetchRoute();
+      fetchRoute(false);
     }
-  }, [pickup, dropoff, showRoute]);
+  }, [pickup.latitude, pickup.longitude, dropoff.latitude, dropoff.longitude, showRoute]);
 
   useEffect(() => {
     if (routeData && cameraRef.current) {
-      // Fit map to show entire route plus driver location
       const coordinates = [...routeData.coordinates];
       if (driverLocation) {
         coordinates.push([driverLocation.longitude, driverLocation.latitude]);
       }
 
-      const lngs = coordinates.map(c => c[0]);
-      const lats = coordinates.map(c => c[1]);
-
-      const bounds = {
-        ne: [Math.max(...lngs), Math.max(...lats)],
-        sw: [Math.min(...lngs), Math.min(...lats)],
-      };
+      const lngs = coordinates.map((c) => c[0]);
+      const lats = coordinates.map((c) => c[1]);
 
       cameraRef.current.fitBounds(
-        bounds.ne as [number, number],
-        bounds.sw as [number, number],
+        [Math.max(...lngs), Math.max(...lats)],
+        [Math.min(...lngs), Math.min(...lats)],
         [MAP_PADDING.top, MAP_PADDING.right, MAP_PADDING.bottom, MAP_PADDING.left],
         ANIMATION_DURATION
       );
     }
-  }, [routeData, driverLocation]);
+  }, [routeData]);
 
-  const fetchRoute = async () => {
+  const fetchRoute = async (fromDriver = false) => {
     setIsLoading(true);
     try {
-      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickup.longitude},${pickup.latitude};${dropoff.longitude},${dropoff.latitude}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
+      const origin = fromDriver && driverLocation ? driverLocation : pickup;
+      const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${origin.longitude},${origin.latitude};${dropoff.longitude},${dropoff.latitude}?geometries=geojson&overview=full&steps=true&access_token=${MAPBOX_ACCESS_TOKEN}`;
 
       const response = await fetch(url);
       const data = await response.json();
 
       if (data.routes && data.routes.length > 0) {
         const route = data.routes[0];
-        const coordinates = route.geometry.coordinates;
+        const coordinates = route.geometry.coordinates as LngLat[];
 
         setRouteData({
           coordinates,
           distance: route.distance,
           duration: route.duration,
         });
+        lastFetchRef.current = Date.now();
 
         if (onRouteReady) {
           onRouteReady(route.distance / 1000, route.duration / 60);
@@ -101,16 +104,35 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
     }
   };
 
-  const routeGeoJSON = routeData
-    ? {
-        type: 'Feature' as const,
-        geometry: {
-          type: 'LineString' as const,
-          coordinates: routeData.coordinates,
-        },
-        properties: {},
-      }
-    : null;
+  const progress = useMemo(() => {
+    if (!routeData || !driverLocation) return null;
+    return splitRouteProgress(routeData.coordinates, driverLocation);
+  }, [routeData, driverLocation?.latitude, driverLocation?.longitude]);
+
+  useEffect(() => {
+    if (!progress?.offRoute || !driverLocation) return;
+    if (Date.now() - lastFetchRef.current < 8000) return;
+    lastFetchRef.current = Date.now();
+    fetchRoute(true);
+  }, [progress?.offRoute, driverLocation?.latitude, driverLocation?.longitude]);
+
+  const travelled =
+    progress && progress.travelled.length >= 2 ? progress.travelled : null;
+  const remaining =
+    progress && progress.remaining.length >= 2
+      ? progress.remaining
+      : routeData?.coordinates || null;
+
+  const remKm = progress
+    ? remainingDistanceMeters(progress.remaining) / 1000
+    : routeData
+      ? routeData.distance / 1000
+      : 0;
+  const remMin = progress && routeData
+    ? estimateRemainingMinutes(routeData.duration / 60, progress.fraction)
+    : routeData
+      ? routeData.duration / 60
+      : 0;
 
   return (
     <View style={styles.container}>
@@ -118,14 +140,13 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
         style={styles.map}
         styleURL={MAP_STYLES.NAVIGATION_DAY}
         compassEnabled
-        attributionEnabled={false}
+        attributionEnabled={true}
         logoEnabled={false}
       >
         <Mapbox.Camera ref={cameraRef} animationDuration={ANIMATION_DURATION} />
 
         <Mapbox.UserLocation visible showsUserHeadingIndicator androidRenderMode="gps" />
 
-        {/* Pickup marker (Green) */}
         <Mapbox.PointAnnotation
           id="pickup"
           coordinate={[pickup.longitude, pickup.latitude]}
@@ -136,7 +157,6 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
           </View>
         </Mapbox.PointAnnotation>
 
-        {/* Dropoff marker (Red) */}
         <Mapbox.PointAnnotation
           id="dropoff"
           coordinate={[dropoff.longitude, dropoff.latitude]}
@@ -147,7 +167,6 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
           </View>
         </Mapbox.PointAnnotation>
 
-        {/* Driver location marker (Purple) */}
         {driverLocation && (
           <Mapbox.PointAnnotation
             id="driver"
@@ -160,35 +179,24 @@ export const DriverMapView: React.FC<DriverMapViewProps> = ({
           </Mapbox.PointAnnotation>
         )}
 
-        {/* Route line */}
-        {routeGeoJSON && (
-          <Mapbox.ShapeSource id="routeSource" shape={routeGeoJSON}>
-            <Mapbox.LineLayer
-              id="routeLine"
-              style={{
-                lineColor: Colors.primary,
-                lineWidth: 5,
-                lineCap: 'round',
-                lineJoin: 'round',
-              }}
-            />
-          </Mapbox.ShapeSource>
-        )}
+        <RouteProgressLayers
+          travelled={travelled}
+          remaining={remaining}
+          idPrefix="driver-map"
+        />
       </Mapbox.MapView>
 
-      {/* Route info overlay */}
       {routeData && (
         <View style={styles.routeInfoContainer}>
           <Text style={styles.routeInfoText}>
-            📍 {(routeData.distance / 1000).toFixed(1)} km • ⏱️ {Math.round(routeData.duration / 60)} min
+            {remKm.toFixed(1)} km • {Math.round(remMin)} min
           </Text>
         </View>
       )}
 
-      {/* Loading indicator */}
       {isLoading && (
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="small" color={Colors.primary} />
+          <ActivityIndicator size="small" color="#4285F4" />
         </View>
       )}
     </View>
@@ -217,13 +225,13 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   pickupMarker: {
-    backgroundColor: Colors.success,
+    backgroundColor: '#0F9D58',
   },
   dropoffMarker: {
-    backgroundColor: Colors.error,
+    backgroundColor: '#EA4335',
   },
   driverMarker: {
-    backgroundColor: Colors.primary,
+    backgroundColor: '#1A73E8',
   },
   markerText: {
     color: '#FFFFFF',
@@ -235,34 +243,34 @@ const styles = StyleSheet.create({
     top: Spacing.md,
     left: Spacing.md,
     right: Spacing.md,
-    backgroundColor: 'rgba(15, 23, 42, 0.95)',
+    backgroundColor: 'rgba(255, 255, 255, 0.96)',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
-    borderColor: Colors.primary,
+    borderColor: '#E8EAED',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
     elevation: 5,
   },
   routeInfoText: {
     fontSize: FontSizes.md,
     fontWeight: FontWeights.semibold,
-    color: Colors.text,
+    color: '#1A73E8',
     textAlign: 'center',
   },
   loadingContainer: {
     position: 'absolute',
     top: Spacing.md,
     right: Spacing.md,
-    backgroundColor: Colors.surface,
+    backgroundColor: '#FFF',
     padding: Spacing.sm,
     borderRadius: BorderRadius.md,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.15,
     shadowRadius: 3.84,
     elevation: 5,
   },
