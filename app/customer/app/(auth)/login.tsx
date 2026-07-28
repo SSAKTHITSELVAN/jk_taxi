@@ -106,7 +106,7 @@ export default function LoginScreen() {
           {/* Logo */}
           <View style={styles.header}>
             <Image
-              source={require('../../assets/images/jk_taxi_logo_home_screen_.png')}
+              source={require('../../assets/images/jk_taxi_logo.png')}
               style={styles.logo}
               resizeMode="contain"
             />

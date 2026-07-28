@@ -2,8 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { connectivity } from '../services/connectivity';
-import { Colors, FontSizes, FontWeights, Spacing } from '../constants/theme';
+import { connectivity } from '../../services/connectivity';
+import { Colors, FontSizes, FontWeights, Spacing } from '../../constants/theme';
 
 export const OfflineBanner: React.FC = () => {
   const [online, setOnline] = useState(true);

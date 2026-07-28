@@ -27,12 +27,13 @@ import {
   FareBreakdown,
 } from '../src/types/enhanced';
 
+const fallbackVehicleImage = require('../assets/images/jk_taxi_logo.png');
 const VEHICLE_IMAGES: Record<string, ImageSourcePropType> = {
-  auto: require('../assets/car_options/auto.png'),
-  bike: require('../assets/car_options/bike_.png'),
-  mini: require('../assets/car_options/mini_car_.png'),
-  sedan: require('../assets/car_options/sedan.png'),
-  suv: require('../assets/car_options/suv_car_.png'),
+  auto: fallbackVehicleImage,
+  bike: fallbackVehicleImage,
+  mini: fallbackVehicleImage,
+  sedan: fallbackVehicleImage,
+  suv: fallbackVehicleImage,
 };
 
 export default function BookRideEnhancedScreen() {
