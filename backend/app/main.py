@@ -43,44 +43,20 @@ async def _dispatch_sweep_loop():
         expire_stale_pending_rides,
         advance_timed_out_offers,
         emit_advance_events,
-        assign_next_offer,
-        emit_ride_offer,
-        scheduled_ready_for_dispatch,
-        begin_dispatch,
+        assign_waiting_rides,
     )
-    from app.models.ride_enhanced import RideEnhanced
     from app.services.realtime import hub
 
     while True:
         try:
             db = SessionLocal()
             try:
-                # 1) Advance per-driver exclusive timeouts
                 events = await advance_timed_out_offers(db)
                 await emit_advance_events(events)
 
-                # 2) Pick up pending rides with no current offer (new / waiting)
-                waiting = (
-                    db.query(RideEnhanced)
-                    .filter(
-                        RideEnhanced.status == "pending",
-                        RideEnhanced.driver_id.is_(None),
-                        RideEnhanced.offered_driver_id.is_(None),
-                    )
-                    .all()
-                )
-                for ride in waiting:
-                    if not scheduled_ready_for_dispatch(ride):
-                        continue
-                    if not getattr(ride, "dispatch_started_at", None):
-                        begin_dispatch(ride)
-                    driver = assign_next_offer(db, ride)
-                    if driver:
-                        db.commit()
-                        db.refresh(ride)
-                        await emit_ride_offer(ride, driver)
+                offer_events = assign_waiting_rides(db)
+                await emit_advance_events(offer_events)
 
-                # 3) Expire overall search TTL
                 expired = expire_stale_pending_rides(db)
                 for ride in expired:
                     data = {

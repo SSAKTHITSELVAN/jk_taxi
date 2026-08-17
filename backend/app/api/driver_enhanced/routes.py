@@ -117,6 +117,11 @@ async def update_driver_location(
     current_driver.current_lng = location.longitude
     current_driver.location_updated_at = func.now()
     db.commit()
+    db.refresh(current_driver)
+
+    if current_driver.is_online:
+        from app.services.dispatch import ensure_dispatch_progress
+        await ensure_dispatch_progress(db)
 
     # Resolve active ride (explicit ride_id preferred)
     active_ride = None
@@ -169,9 +174,11 @@ async def get_available_rides(
         offer_remaining_seconds,
         driver_offer_remaining_seconds,
         offer_is_for_driver,
+        ensure_dispatch_progress,
     )
     from app.services.routing import estimate_pickup_eta_minutes, haversine_km
 
+    await ensure_dispatch_progress(db)
     expire_stale_pending_rides(db)
 
     ok, reason = driver_docs_ready(current_driver)
@@ -792,23 +799,30 @@ async def update_driver_status_v2(
     db: Session = Depends(get_db),
 ):
     """Go online/offline with docs + location gates."""
-    from app.services.dispatch import driver_docs_ready, driver_location_fresh
+    from app.services.dispatch import driver_docs_ready, driver_location_fresh, ensure_dispatch_progress
 
     want_online = bool(payload.get("is_online"))
     if want_online:
         ok, reason = driver_docs_ready(current_driver)
         if not ok:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=reason)
+        if current_driver.current_lat is None or current_driver.current_lng is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Share your GPS location before going online",
+            )
         if not driver_location_fresh(current_driver):
-            if current_driver.current_lat is None or current_driver.current_lng is None:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Share your GPS location before going online",
-                )
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="GPS location is stale. Enable location and try again.",
+            )
 
     current_driver.is_online = want_online
     db.commit()
     db.refresh(current_driver)
+
+    if want_online:
+        await ensure_dispatch_progress(db, force=True)
     return {
         "id": str(current_driver.id),
         "is_online": current_driver.is_online,

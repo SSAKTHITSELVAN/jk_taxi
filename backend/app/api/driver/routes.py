@@ -48,7 +48,7 @@ async def update_driver_status(
     db: Session = Depends(get_db)
 ):
     """Update driver online/offline status"""
-    from app.services.dispatch import driver_docs_ready, driver_location_fresh
+    from app.services.dispatch import driver_docs_ready, driver_location_fresh, ensure_dispatch_progress
 
     if status_update.is_online:
         ok, reason = driver_docs_ready(current_driver)
@@ -59,12 +59,19 @@ async def update_driver_status(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Share your GPS location before going online",
             )
-        # Soft warning path: allow if coords exist even if slightly stale on first toggle
-        _ = driver_location_fresh(current_driver)
+        if not driver_location_fresh(current_driver):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="GPS location is stale. Enable location and try again.",
+            )
 
     current_driver.is_online = status_update.is_online
     db.commit()
     db.refresh(current_driver)
+
+    if status_update.is_online:
+        await ensure_dispatch_progress(db, force=True)
+
     return current_driver
 
 
